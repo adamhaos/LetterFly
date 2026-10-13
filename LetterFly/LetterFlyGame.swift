@@ -26,9 +26,7 @@ final class LetterFlyGame {
         var tileCount: Int { stackCount * layerCount }
         /// Each layer spells `wordsPerLayer` hidden words, filling every stack once.
         var wordsPerLayer: Int { self == .classic ? 1 : 2 }
-        fileprivate var wordSource: [String] {
-            self == .big ? LetterFlyGame.sixLetterWords : LetterFlyGame.eightLetterWords
-        }
+        var wordLength: Int { stackCount / wordsPerLayer }
     }
 
     static let roundDurations: [TimeInterval] = [90, 180, 270]
@@ -43,6 +41,7 @@ final class LetterFlyGame {
     struct Submission {
         let word: String
         let points: Int
+        let isThemeWord: Bool
     }
 
     static let commonWords: Set<String> = [
@@ -56,20 +55,6 @@ final class LetterFlyGame {
         "pie", "pig", "pin", "pot", "red", "run", "sad", "say", "sea", "see", "sit", "six", "sky", "sun", "tap",
         "tea", "ten", "the", "tie", "top", "toy", "try", "two", "use", "van", "war", "was", "way", "web", "wet",
         "who", "why", "win", "yes", "you", "zoo"
-    ]
-
-    private static let eightLetterWords = [
-        "NOTEBOOK", "SUNLIGHT", "TREASURE", "PAINTING", "ELEPHANT", "MOUNTAIN",
-        "BASEBALL", "SANDWICH", "UMBRELLA", "HOSPITAL", "DINOSAUR", "SEASHELL",
-        "CAMPFIRE", "KEYBOARD", "BLUEBIRD", "DAYDREAM", "BUILDING", "FOOTBALL",
-        "BIRTHDAY", "DAUGHTER", "VACATION", "MUSHROOM", "SCISSORS", "SQUIRREL"
-    ]
-
-    private static let sixLetterWords = [
-        "PLANET", "FLOWER", "CASTLE", "JUNGLE", "ROCKET", "GARDEN", "WINTER", "SUMMER",
-        "ORANGE", "PURPLE", "SCHOOL", "BRIDGE", "CAMERA", "PENCIL", "RABBIT", "TURTLE",
-        "PIRATE", "DRAGON", "COOKIE", "BANANA", "MONKEY", "KITTEN", "FOREST", "ISLAND",
-        "MARKET", "POCKET", "BUTTON", "BASKET", "CANDLE", "WINDOW", "FAMILY", "FRIEND"
     ]
 
     private static let letterValues: [Character: Int] = [
@@ -88,20 +73,25 @@ final class LetterFlyGame {
     private(set) var roundWords: [String] = []
     private(set) var longestWord = "—"
     private(set) var boardSize: BoardSize = .classic
+    private(set) var world: World = .storm
     var score = 0
 
-    var currentWord: String { String(selectedTileIDs.compactMap { tile(id: $0)?.letter }) }
+    var selectedTiles: [Tile] { selectedTileIDs.compactMap { tile(id: $0) } }
+    var currentWord: String { String(selectedTiles.map(\.letter)) }
     var remainingTileCount: Int { stacks.flatMap { $0 }.filter { !$0.removed }.count }
     var exposedTileIDs: [Int?] {
         stacks.map { stack in stack.last(where: { !$0.removed && !selectedTileIDs.contains($0.id) })?.id }
     }
 
-    init() { startNewRound(boardSize: .classic) }
+    var foundThemeWordCount: Int { roundWords.filter { usedWords.contains($0.lowercased()) }.count }
 
-    func startNewRound(boardSize: BoardSize) {
+    init() { startNewRound(boardSize: .classic, world: .storm) }
+
+    func startNewRound(boardSize: BoardSize, world: World) {
         self.boardSize = boardSize
+        self.world = world
         let wordsPerLayer = boardSize.wordsPerLayer
-        roundWords = Array(boardSize.wordSource.shuffled().prefix(boardSize.layerCount * wordsPerLayer))
+        roundWords = Array(world.words(ofLength: boardSize.wordLength).shuffled().prefix(boardSize.layerCount * wordsPerLayer))
         stacks = Array(repeating: [], count: boardSize.stackCount)
         selectedTileIDs = []
         usedWords = []
@@ -148,11 +138,13 @@ final class LetterFlyGame {
             mutateTile(id: id) { $0.removed = true }
         }
         points = points * max(1, word.count - 2)
+        let isThemeWord = roundWords.contains(word.uppercased())
+        if isThemeWord { points *= 2 }
         score += points
         usedWords.insert(word)
         if longestWord == "—" || word.count > longestWord.count { longestWord = word }
         selectedTileIDs = []
-        return Submission(word: word, points: points)
+        return Submission(word: word, points: points, isThemeWord: isThemeWord)
     }
 
     func shuffleExposedLetters() {
