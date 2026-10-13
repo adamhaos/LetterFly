@@ -124,6 +124,8 @@ final class LetterFlyGame {
         if endless {
             let keep = (boardSize.layerCount + 1) / 2
             stacks = stacks.map { Array($0.suffix(keep)) }
+            // Only the kept (top) layers' words can still be found; the top layer is the first word.
+            roundWords = Array(roundWords.prefix(keep * wordsPerLayer))
         }
         // Bigger boards hide one wild "?" letter somewhere in the pile.
         if boardSize != .classic, let lane = stacks.indices.randomElement(), let index = stacks[lane].indices.randomElement() {
@@ -206,7 +208,8 @@ final class LetterFlyGame {
     /// Shuffles the uncovered letters and returns where each one moved, as (from, to) tile ids.
     @discardableResult
     func shuffleExposedLetters() -> [(from: Int, to: Int)] {
-        let ids = exposedTileIDs.compactMap { $0 }
+        // The wild "?" stays put; only ordinary letters trade places.
+        let ids = exposedTileIDs.compactMap { $0 }.filter { tile(id: $0)?.isWild == false }
         let letters = ids.compactMap { tile(id: $0)?.letter }
         let order = Array(ids.indices).shuffled()
         for (index, source) in order.enumerated() {

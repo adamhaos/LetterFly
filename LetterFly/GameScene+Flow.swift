@@ -75,7 +75,7 @@ extension GameScene {
         nodeNamed("menu-note")?.removeFromParent()
         let note = addLabel(text, font: "AvenirNext-DemiBold", size: 12, color: Palette.coral,
                             at: CGPoint(x: safeFrame.midX, y: safeFrame.minY + 14), alignment: .center,
-                            name: "menu-note", z: 50)
+                            name: "menu-note", z: 150)
         note.run(.sequence([.wait(forDuration: 1.8), .fadeOut(withDuration: 0.3), .removeFromParent()]))
     }
 
@@ -112,7 +112,7 @@ extension GameScene {
             statusMessage = "BOSS: \(level.world.bossTwist)"
             statusExpiresAt = 0
         } else if game.isEndless {
-            statusMessage = "Letters keep falling — don't let the pile topple!"
+            statusMessage = "Don't let the pile topple!"
         } else {
             statusMessage = activeLevel.map { "Score \($0.targetScore) to pass" } ?? "Make words with the uncovered letters"
         }
@@ -193,6 +193,10 @@ extension GameScene {
         screen = .finished
         statusMessage = message
         lastUpdateTime = 0
+        // Calm the backdrop back down if the clock was running low.
+        isClockUrgent = false
+        backgroundLayer?.removeAllActions()
+        backgroundLayer?.speed = 1
         stats.recordRound(score: game.score, world: game.world)
         if let level = activeLevel {
             passedLevel = game.score >= level.targetScore

@@ -33,7 +33,7 @@ struct Level: Equatable {
     /// simulated casual player (3–5 letter words, ~10 s each): the first level of each
     /// board size is passed most of the time, the last level about half the time.
     var targetScore: Int {
-        let base = [70, 85, 165, 190, 320, 300][number - 1]
+        let base = [70, 85, 165, 190, 320, 350][number - 1]
         let scaled = Double(base) * (1 + 0.04 * Double(world.rawValue))
         return Int((scaled / 5).rounded()) * 5
     }

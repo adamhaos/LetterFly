@@ -140,7 +140,15 @@ final class GameScene: SKScene {
         overlay.zPosition = 90
         if overlay.parent == nil { addChild(overlay) }
         selectedLevel = progress.nextLevel(in: selectedWorld)
+        NotificationCenter.default.removeObserver(self, name: .letterFlyWillResignActive, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appWillResignActive),
+                                               name: .letterFlyWillResignActive, object: nil)
         render()
+    }
+
+    @objc func appWillResignActive() {
+        guard screen == .playing, !isConfirmingExit, tutorialStep == nil else { return }
+        presentExitConfirmation()
     }
 
     override func didChangeSize(_ oldSize: CGSize) {

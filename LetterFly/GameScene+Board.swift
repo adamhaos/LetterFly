@@ -399,8 +399,13 @@ extension GameScene {
                   color: Palette.gold, at: CGPoint(x: area.minX + 38, y: lowerY), fontSize: 12)
         addButton(title: "MIX", name: "action-shuffle", size: CGSize(width: 66, height: 36),
                   color: Self.glassButton, at: CGPoint(x: area.maxX - 33, y: lowerY), fontSize: 12)
-        addLabel(statusMessage, font: "AvenirNext-DemiBold", size: fittedFontSize(for: statusMessage, max: 13, width: cardWidth - 180),
-                 color: onGlass(statusColor), at: CGPoint(x: area.midX, y: lowerY), alignment: .center, name: "status-label")
+        // Long messages wrap onto a second line instead of shrinking to an unreadable size.
+        let status = addLabel(statusMessage, font: "AvenirNext-DemiBold", size: 12,
+                              color: onGlass(statusColor), at: CGPoint(x: area.midX, y: lowerY), alignment: .center,
+                              name: "status-label")
+        status.numberOfLines = 2
+        status.preferredMaxLayoutWidth = cardWidth - 176
+        status.lineBreakMode = .byWordWrapping
         // The slot between the action rows holds goal progress, then the finish button.
         let slotY = (actionY - 24 + lowerY + 18) / 2
         drawGoalBar(center: CGPoint(x: area.midX, y: slotY), width: cardWidth)
@@ -420,7 +425,11 @@ extension GameScene {
         }
     }
 
-    var clockColor: SKColor { timeRemaining <= 10 ? Palette.coral : (timeRemaining < 15 ? Palette.softCoral : .white) }
+    var clockColor: SKColor {
+        // Endless counts up, so it never runs low.
+        guard !game.isEndless else { return .white }
+        return timeRemaining <= 10 ? Palette.coral : (timeRemaining < 15 ? Palette.softCoral : .white)
+    }
 
     /// The word in progress, with 2× bonus letters picked out in red.
     func attributedWord(_ tiles: [LetterFlyGame.Tile], fontSize: CGFloat) -> NSAttributedString {

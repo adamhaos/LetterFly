@@ -111,7 +111,7 @@ extension GameScene {
 
     /// The home-screen mascot loops off the right edge, sweeps back in from the left and lands home.
     func flyAcross(_ logo: SKNode) {
-        guard logo.action(forKey: "fly-across") == nil else { return }
+        guard logo.action(forKey: "fly-across") == nil, logo.action(forKey: "roam") == nil else { return }
         let home = logo.position
         let width = frame.width
         let out = CGMutablePath()

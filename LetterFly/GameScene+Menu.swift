@@ -165,7 +165,10 @@ extension GameScene {
     }
 
     var showingFreePlay: Bool { isFreePlaySelected && progress.isFreePlayUnlocked(in: selectedWorld) }
-    var playButtonTitle: String { showingFreePlay ? "START FREE PLAY" : "PLAY LEVEL \(selectedLevel.number)" }
+    var playButtonTitle: String {
+        if showingFreePlay { return selectedRoundDuration == 0 ? "START ENDLESS" : "START FREE PLAY" }
+        return selectedLevel.isBoss ? "PLAY BOSS LEVEL" : "PLAY LEVEL \(selectedLevel.number)"
+    }
     var playButtonAction: String { showingFreePlay ? "action-free-play" : "action-play" }
 
     var setupCardHeight: CGFloat { showingFreePlay ? 330 : 236 }
