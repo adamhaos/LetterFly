@@ -25,10 +25,12 @@ struct Level: Equatable {
         }
     }
 
-    /// Targets climb within a world and by 10% per world after Storm.
+    /// Targets climb within a world and by 4% per world after Storm. Tuned with a
+    /// simulated casual player (3–5 letter words, ~10 s each): the first level of each
+    /// board size is passed most of the time, the last level about half the time.
     var targetScore: Int {
-        let base = [90, 130, 230, 290, 460][number - 1]
-        let scaled = Double(base) * (1 + 0.10 * Double(world.rawValue))
+        let base = [70, 85, 165, 190, 320][number - 1]
+        let scaled = Double(base) * (1 + 0.04 * Double(world.rawValue))
         return Int((scaled / 5).rounded()) * 5
     }
 }
