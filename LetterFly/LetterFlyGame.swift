@@ -36,6 +36,12 @@ final class LetterFlyGame {
         var letter: Character
         let isBonus: Bool
         var removed = false
+        /// A "?" letter that stands in for any letter. `letter` still holds the letter the
+        /// round's theme word needs there, which the move helpers use behind the scenes.
+        var isWild = false
+
+        /// The character shown to the player.
+        var shown: Character { isWild ? "?" : letter }
     }
 
     struct Submission {
@@ -74,10 +80,14 @@ final class LetterFlyGame {
     private(set) var longestWord = "—"
     private(set) var boardSize: BoardSize = .classic
     private(set) var world: World = .storm
+    /// Endless rounds start half full and keep receiving new letters.
+    private(set) var isEndless = false
+    private(set) var nextTileID = 0
     var score = 0
 
     var selectedTiles: [Tile] { selectedTileIDs.compactMap { tile(id: $0) } }
-    var currentWord: String { String(selectedTiles.map(\.letter)) }
+    /// The word as the player sees it, with "?" for a wild letter.
+    var currentWord: String { String(selectedTiles.map(\.shown)) }
     var remainingTileCount: Int { stacks.flatMap { $0 }.filter { !$0.removed }.count }
     var exposedTileIDs: [Int?] {
         stacks.map { stack in stack.last(where: { !$0.removed && !selectedTileIDs.contains($0.id) })?.id }
@@ -87,9 +97,10 @@ final class LetterFlyGame {
 
     init() { startNewRound(boardSize: .classic, world: .storm) }
 
-    func startNewRound(boardSize: BoardSize, world: World) {
+    func startNewRound(boardSize: BoardSize, world: World, endless: Bool = false) {
         self.boardSize = boardSize
         self.world = world
+        isEndless = endless
         let wordsPerLayer = boardSize.wordsPerLayer
         roundWords = Array(world.words(ofLength: boardSize.wordLength).shuffled().prefix(boardSize.layerCount * wordsPerLayer))
         stacks = Array(repeating: [], count: boardSize.stackCount)
@@ -109,6 +120,49 @@ final class LetterFlyGame {
                 nextID += 1
             }
         }
+        // Endless rounds start with only the top half of the pile.
+        if endless {
+            let keep = (boardSize.layerCount + 1) / 2
+            stacks = stacks.map { Array($0.suffix(keep)) }
+        }
+        // Bigger boards hide one wild "?" letter somewhere in the pile.
+        if boardSize != .classic, let lane = stacks.indices.randomElement(), let index = stacks[lane].indices.randomElement() {
+            let tile = stacks[lane][index]
+            stacks[lane][index] = Tile(id: tile.id, letter: tile.letter, isBonus: false, isWild: true)
+        }
+        nextTileID = nextID
+    }
+
+    /// The most letters the pile can hold in Endless before it topples.
+    var endlessCapacity: Int { boardSize.stackCount * (boardSize.layerCount + 1) }
+
+    /// Drops a new letter onto a random stack (Endless mode). Common letters come up more often.
+    @discardableResult
+    func dropLetter() -> (tile: Tile, lane: Int) {
+        let bag: [(Character, Int)] = [
+            ("E", 12), ("A", 9), ("I", 8), ("O", 8), ("N", 6), ("R", 6), ("T", 6), ("L", 4), ("S", 5), ("U", 4),
+            ("D", 4), ("G", 3), ("B", 2), ("C", 2), ("M", 2), ("P", 2), ("F", 2), ("H", 2), ("V", 1), ("W", 2),
+            ("Y", 2), ("K", 1), ("J", 1), ("X", 1), ("Q", 1), ("Z", 1)
+        ]
+        var roll = Int.random(in: 0..<bag.reduce(0) { $0 + $1.1 })
+        var letter: Character = "E"
+        for (candidate, weight) in bag {
+            if roll < weight { letter = candidate; break }
+            roll -= weight
+        }
+        let lane = stacks.indices.randomElement() ?? 0
+        let tile = Tile(id: nextTileID, letter: letter, isBonus: Int.random(in: 0..<8) == 0)
+        nextTileID += 1
+        stacks[lane].append(tile)
+        return (tile, lane)
+    }
+
+    /// Removes an uncovered letter without scoring it (the Volcano boss's lava).
+    @discardableResult
+    func burnTile(id: Int) -> Bool {
+        guard exposedTileIDs.compactMap({ $0 }).contains(id) else { return false }
+        mutateTile(id: id) { $0.removed = true }
+        return true
     }
 
     @discardableResult
@@ -128,12 +182,14 @@ final class LetterFlyGame {
         return true
     }
 
-    func commitSelection() -> Submission {
-        let word = currentWord.lowercased()
+    /// Scores and removes the selected letters. `resolvedWord` spells out any wild letter.
+    func commitSelection(as resolvedWord: String? = nil) -> Submission {
+        let word = (resolvedWord ?? currentWord).lowercased()
         var points = 0
         for id in selectedTileIDs {
             guard let tile = tile(id: id) else { continue }
-            let base = Self.pointValue(for: tile.letter)
+            // A wild letter is free to use but worth nothing itself.
+            let base = tile.isWild ? 0 : Self.pointValue(for: tile.letter)
             points += tile.isBonus ? base * 2 : base
             mutateTile(id: id) { $0.removed = true }
         }
@@ -147,10 +203,19 @@ final class LetterFlyGame {
         return Submission(word: word, points: points, isThemeWord: isThemeWord)
     }
 
-    func shuffleExposedLetters() {
+    /// Shuffles the uncovered letters and returns where each one moved, as (from, to) tile ids.
+    @discardableResult
+    func shuffleExposedLetters() -> [(from: Int, to: Int)] {
         let ids = exposedTileIDs.compactMap { $0 }
-        let letters = ids.compactMap { tile(id: $0)?.letter }.shuffled()
-        for (id, letter) in zip(ids, letters) { mutateTile(id: id) { $0.letter = letter } }
+        let letters = ids.compactMap { tile(id: $0)?.letter }
+        let order = Array(ids.indices).shuffled()
+        for (index, source) in order.enumerated() {
+            let letter = letters[source]
+            mutateTile(id: ids[index]) { $0.letter = letter }
+        }
+        return order.enumerated().compactMap { index, source in
+            source == index ? nil : (from: ids[source], to: ids[index])
+        }
     }
 
     func bestAvailableRoundWord() -> String? {

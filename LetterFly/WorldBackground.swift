@@ -15,6 +15,30 @@ extension World {
         }
     }
 
+    /// Dark tint for in-game panels, so the controls read as tinted glass over the world.
+    var glass: SKColor {
+        switch self {
+        case .storm: SKColor(red: 0.09, green: 0.12, blue: 0.19, alpha: 0.8)
+        case .circus: SKColor(red: 0.22, green: 0.04, blue: 0.07, alpha: 0.8)
+        case .road: SKColor(red: 0.09, green: 0.09, blue: 0.20, alpha: 0.8)
+        case .water: SKColor(red: 0.02, green: 0.13, blue: 0.19, alpha: 0.8)
+        case .volcano: SKColor(red: 0.14, green: 0.04, blue: 0.04, alpha: 0.8)
+        case .space: SKColor(red: 0.05, green: 0.04, blue: 0.14, alpha: 0.8)
+        }
+    }
+
+    /// A brighter accent for text and highlights on the dark glass panels.
+    var accentLight: SKColor {
+        switch self {
+        case .storm: SKColor(red: 0.62, green: 0.76, blue: 0.96, alpha: 1)
+        case .circus: SKColor(red: 1.00, green: 0.58, blue: 0.56, alpha: 1)
+        case .road: SKColor(red: 1.00, green: 0.76, blue: 0.48, alpha: 1)
+        case .water: SKColor(red: 0.48, green: 0.90, blue: 0.92, alpha: 1)
+        case .volcano: SKColor(red: 1.00, green: 0.64, blue: 0.38, alpha: 1)
+        case .space: SKColor(red: 0.74, green: 0.64, blue: 1.00, alpha: 1)
+        }
+    }
+
     var symbolName: String {
         switch self {
         case .storm: "cloud.bolt.rain.fill"

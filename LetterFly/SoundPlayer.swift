@@ -23,6 +23,7 @@ final class SoundPlayer {
     private var nextPlayer = 0
     private var effects: [Effect: AVAudioPCMBuffer] = [:]
     private var selectNotes: [AVAudioPCMBuffer] = []
+    private var worldSelectNotes: [World: [AVAudioPCMBuffer]] = [:]
 
     private init() {
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
@@ -34,8 +35,12 @@ final class SoundPlayer {
         }
         for effect in Effect.allCases { effects[effect] = render(Self.tones(for: effect)) }
         // A rising pentatonic run, one step per selected letter.
-        selectNotes = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21].map { step in
+        let steps = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21]
+        selectNotes = steps.map { step in
             render([Tone(note: 72 + step, start: 0, duration: 0.07, volume: 0.22, wave: .triangle)])
+        }
+        for world in World.allCases {
+            worldSelectNotes[world] = steps.map { render(Self.letterTones(for: world, step: $0)) }
         }
     }
 
@@ -45,9 +50,38 @@ final class SoundPlayer {
     }
 
     /// Plays the letter-selection blip, pitched up for each letter already in the word.
-    func playSelect(letterIndex: Int) {
-        guard !selectNotes.isEmpty else { return }
-        schedule(selectNotes[min(max(letterIndex, 0), selectNotes.count - 1)])
+    func playSelect(letterIndex: Int, world: World? = nil) {
+        let notes = world.flatMap { worldSelectNotes[$0] } ?? selectNotes
+        guard !notes.isEmpty else { return }
+        schedule(notes[min(max(letterIndex, 0), notes.count - 1)])
+    }
+
+    /// Each world's letter-tap sound, pitched up by `step` semitones.
+    private static func letterTones(for world: World, step: Int) -> [Tone] {
+        switch world {
+        case .storm:
+            // A raindrop: a bright plip that falls in pitch, with a tiny splash.
+            [Tone(note: 86 + step, start: 0, duration: 0.07, volume: 0.22, wave: .sine, glide: -9),
+             Tone(note: 0, start: 0, duration: 0.03, volume: 0.05, wave: .noise)]
+        case .circus:
+            // A clown-horn honk: two reedy square waves a fifth apart.
+            [Tone(note: 60 + step, start: 0, duration: 0.11, volume: 0.09, wave: .square, glide: 1),
+             Tone(note: 67 + step, start: 0, duration: 0.11, volume: 0.05, wave: .square, glide: 1)]
+        case .road:
+            // A little car-horn beep: a major-third dyad.
+            [Tone(note: 64 + step, start: 0, duration: 0.09, volume: 0.12, wave: .triangle),
+             Tone(note: 68 + step, start: 0, duration: 0.09, volume: 0.07, wave: .square)]
+        case .water:
+            // A bubble: a round sine that bloops upward.
+            [Tone(note: 62 + step, start: 0, duration: 0.09, volume: 0.25, wave: .sine, glide: 12)]
+        case .volcano:
+            // A rumble: a low thump with a crackle on top.
+            [Tone(note: 50 + step, start: 0, duration: 0.10, volume: 0.24, wave: .triangle, glide: -5),
+             Tone(note: 0, start: 0, duration: 0.06, volume: 0.09, wave: .noise)]
+        case .space:
+            // A laser pew: a zippy falling blip.
+            [Tone(note: 90 + step, start: 0, duration: 0.09, volume: 0.10, wave: .square, glide: -16)]
+        }
     }
 
     private func schedule(_ buffer: AVAudioPCMBuffer) {

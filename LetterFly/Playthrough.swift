@@ -2,12 +2,16 @@ import Foundation
 
 /// One playthrough level: a fixed board and clock with a score to beat.
 struct Level: Equatable {
-    static let countPerWorld = 5
+    /// Five regular levels, then a boss level with a world-specific twist.
+    static let countPerWorld = 6
+    static let regularCount = 5
     /// Levels a player must beat in a world to unlock the next one.
     static let countToUnlockNext = 3
 
     let world: World
     let number: Int
+
+    var isBoss: Bool { number > Level.regularCount }
 
     var boardSize: LetterFlyGame.BoardSize {
         switch number {
@@ -29,7 +33,7 @@ struct Level: Equatable {
     /// simulated casual player (3–5 letter words, ~10 s each): the first level of each
     /// board size is passed most of the time, the last level about half the time.
     var targetScore: Int {
-        let base = [70, 85, 165, 190, 320][number - 1]
+        let base = [70, 85, 165, 190, 320, 300][number - 1]
         let scaled = Double(base) * (1 + 0.04 * Double(world.rawValue))
         return Int((scaled / 5).rounded()) * 5
     }
@@ -53,6 +57,11 @@ final class ProgressStore {
         return levelsBeaten(in: previous) >= Level.countToUnlockNext
     }
 
+    /// Free Play opens in a world once all of its levels are beaten.
+    func isFreePlayUnlocked(in world: World) -> Bool {
+        levelsBeaten(in: world) >= Level.regularCount
+    }
+
     func isPlayable(_ level: Level) -> Bool {
         isUnlocked(level.world) && level.number <= levelsBeaten(in: level.world) + 1
     }
@@ -73,5 +82,29 @@ final class ProgressStore {
         return next
     }
 
+    /// A star marks a level passed while finding every theme word in the round.
+    func hasStar(_ level: Level) -> Bool {
+        starredLevels(in: level.world).contains(level.number)
+    }
+
+    func starCount(in world: World) -> Int { starredLevels(in: world).count }
+
+    /// A world is mastered once every one of its levels has a star.
+    func isMastered(_ world: World) -> Bool { starCount(in: world) == Level.countPerWorld }
+
+    /// Records a star and returns whether it is new.
+    @discardableResult
+    func recordStar(for level: Level) -> Bool {
+        var starred = starredLevels(in: level.world)
+        guard starred.insert(level.number).inserted else { return false }
+        defaults.set(starred.sorted(), forKey: starKey(for: level.world))
+        return true
+    }
+
+    private func starredLevels(in world: World) -> Set<Int> {
+        Set((defaults.array(forKey: starKey(for: world)) ?? []).compactMap { ($0 as? NSNumber)?.intValue })
+    }
+
     private func key(for world: World) -> String { "progress.\(world.rawValue)" }
+    private func starKey(for world: World) -> String { "stars.\(world.rawValue)" }
 }
