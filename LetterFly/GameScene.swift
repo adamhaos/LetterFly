@@ -2,6 +2,8 @@ import SpriteKit
 import UIKit
 
 final class GameScene: SKScene {
+    /// Rainbow-skin shaders, shared by every bug (keyed by brightness).
+    nonisolated(unsafe) static var rainbowShaders: [Int: SKShader] = [:]
     enum Screen { case menu, playing, finished }
     enum Mode { case playthrough, freePlay }
 
@@ -32,25 +34,55 @@ final class GameScene: SKScene {
         }
     }
 
-    /// Home-screen colors, lightly tinted by the selected world.
+    /// Home-screen colors, lightly tinted by the selected world. In dark mode the card and
+    /// buttons go dark too (the backdrop is the same either way).
     struct MenuTheme {
         let card: SKColor
         let stroke: SKColor
         let chip: SKColor
         let accent: SKColor
-        /// The accent darkened for text and selected states on light cards.
+        /// The accent tuned for text and selected states on the card.
         let deepAccent: SKColor
+        /// Main and secondary text on the card, and the base color for faint outlines.
+        let text: SKColor
+        let subtext: SKColor
+        let line: SKColor
+        /// Progress-ring notches around the world tiles: beaten levels, and levels still to play.
+        /// White on the cream card is soft; on the dark card it would glare, so dark uses a
+        /// tone just above the card instead.
+        let notchDone: SKColor
+        let notchOpen: SKColor
 
-        init(world: World) {
-            card = Palette.mix(Palette.paper, world.accent, 0.06)
-            stroke = world.accent.withAlphaComponent(0.35)
-            chip = Palette.mix(Palette.cream, world.accent, 0.10)
+        init(world: World, dark: Bool = false) {
             accent = world.accent
-            deepAccent = Palette.mix(world.accent, Palette.ink, 0.35)
+            if dark {
+                // Solid and a step lighter than the veiled backdrop, so the card stands apart from it.
+                card = Palette.mix(SKColor(red: 0.17, green: 0.19, blue: 0.25, alpha: 1), world.accent, 0.12)
+                chip = Palette.mix(card, .white, 0.10)
+                stroke = world.accentLight.withAlphaComponent(0.4)
+                deepAccent = world.accentLight
+                text = Palette.cream
+                subtext = SKColor(white: 1, alpha: 0.55)
+                line = .white
+                notchDone = Palette.mix(card, .white, 0.38)
+                notchOpen = SKColor(white: 1, alpha: 0.08)
+            } else {
+                card = Palette.mix(Palette.paper, world.accent, 0.06)
+                chip = Palette.mix(Palette.cream, world.accent, 0.10)
+                stroke = world.accent.withAlphaComponent(0.35)
+                deepAccent = Palette.mix(world.accent, Palette.ink, 0.35)
+                text = Palette.ink
+                subtext = Palette.muted
+                line = Palette.ink
+                notchDone = SKColor(white: 1, alpha: 0.95)
+                notchOpen = Palette.ink.withAlphaComponent(0.18)
+            }
         }
     }
 
-    var menuTheme: MenuTheme { MenuTheme(world: selectedWorld) }
+    /// Popups over the menu keep the light look; the menu itself follows dark mode.
+    var menuTheme: MenuTheme { MenuTheme(world: selectedWorld, dark: isDarkMode && !isDrawingMenuOverlay) }
+    var isDarkMode: Bool { view?.traitCollection.userInterfaceStyle == .dark }
 
     let game = LetterFlyGame()
     let checker = UITextChecker()
@@ -113,11 +145,37 @@ final class GameScene: SKScene {
     /// Set when this round beat the world's last level and opened its Free Play.
     var unlockedFreePlay = false
 
+    /// The Myth trial being played, if any.
+    var trial: MythTrial?
+    /// The trial's legend card is up; the clock waits until it's dismissed.
+    var isShowingTrialIntro = false
+    /// The last trial outcome, applied once the word's animation finishes.
+    var pendingOutcome: MythTrial.Outcome?
+    /// Whether Myth was still locked when this round began, to announce it opening.
+    var mythWasLocked = true
+    /// Set when the round just played earned the rainbow skin.
+    var earnedRainbow = false
+    /// The safe-area insets the screen was last laid out with. They aren't known yet on the
+    /// very first render, so the layout is redone once they arrive.
+    var lastSafeInsets: UIEdgeInsets?
+    /// Set while a popup over the menu is drawn, so it keeps the light theme.
+    var isDrawingMenuOverlay = false
+    /// The appearance the menu was last drawn in, to redraw when it changes.
+    var lastDarkMode: Bool?
+    /// A star-word splash is up; the clock waits until it's gone.
+    var isShowingStarSplash = false
+    /// The Myth stop the home bug was last drawn at, so she can fly to a new one.
+    var mythBugStop: Int?
+
     /// Holds the world backdrops. It survives re-renders so animations run smoothly
     /// and an outgoing backdrop can fade out under the incoming one.
     let backdrop = SKNode()
     /// Transient animations (the hint bug) that must survive re-renders mid-flight.
     let overlay = SKNode()
+    /// Screen transitions (the rainbow sweep into Myth), kept across re-renders on every screen.
+    let transitionLayer = SKNode()
+    /// Set when the Myth road should draw itself in on its next render.
+    var mythIntroPending = false
     /// Letters mid-flight: hidden in the word bar (by tile id) or in the pile until their copy lands.
     var hiddenInWord: Set<Int> = []
     var hiddenInPile: Set<Int> = []
@@ -130,7 +188,6 @@ final class GameScene: SKScene {
     weak var pressedNode: SKNode?
     /// Live mini backdrops for the world tiles, kept between redraws so they animate smoothly.
     var worldPreviews: [World: SKCropNode] = [:]
-    var lastDarkMode: Bool?
 
     override func didMove(to view: SKView) {
         backgroundColor = Palette.cream
@@ -139,6 +196,8 @@ final class GameScene: SKScene {
         if backdrop.parent == nil { addChild(backdrop) }
         overlay.zPosition = 90
         if overlay.parent == nil { addChild(overlay) }
+        transitionLayer.zPosition = 400
+        if transitionLayer.parent == nil { addChild(transitionLayer) }
         selectedLevel = progress.nextLevel(in: selectedWorld)
         NotificationCenter.default.removeObserver(self, name: .letterFlyWillResignActive, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(appWillResignActive),
@@ -147,7 +206,7 @@ final class GameScene: SKScene {
     }
 
     @objc func appWillResignActive() {
-        guard screen == .playing, !isConfirmingExit, tutorialStep == nil else { return }
+        guard screen == .playing, !isConfirmingExit, !isShowingTrialIntro, tutorialStep == nil else { return }
         presentExitConfirmation()
     }
 
@@ -159,13 +218,17 @@ final class GameScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         self.currentTime = currentTime
+        if let insets = view?.safeAreaInsets, insets != lastSafeInsets {
+            lastSafeInsets = insets
+            render()
+        }
         // Follow the phone's light/dark setting on the home screen.
-        if screen == .menu, let dark = view.map({ $0.traitCollection.userInterfaceStyle == .dark }), dark != lastDarkMode {
-            lastDarkMode = dark
+        if screen == .menu, isDarkMode != lastDarkMode, !isAnimatingFeedback {
+            lastDarkMode = isDarkMode
             render()
         }
         // The clock waits while paused or while the tutorial is explaining things.
-        guard screen == .playing, !isConfirmingExit, tutorialStep == nil else {
+        guard screen == .playing, !isConfirmingExit, !isShowingTrialIntro, !isShowingStarSplash, tutorialStep == nil else {
             lastUpdateTime = currentTime
             return
         }
@@ -228,9 +291,27 @@ final class GameScene: SKScene {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         releasePress()
-        guard !isAnimatingFeedback else { return }
         guard let point = touches.first?.location(in: self) else { return }
+        handleTap(at: point)
+    }
+
+    /// Everything a finished tap does, given where it landed in the scene.
+    func handleTap(at point: CGPoint) {
+        // A tap dismisses the star-word splash, even while the word's own animation plays.
+        if isShowingStarSplash {
+            dismissStarSplash()
+            return
+        }
+        guard !isAnimatingFeedback else { return }
         let names = nodes(at: point).compactMap(\.name)
+        if isShowingTrialIntro {
+            // Any tap starts the trial.
+            isShowingTrialIntro = false
+            lastUpdateTime = 0
+            haptics.select()
+            render()
+            return
+        }
         if isConfirmingExit {
             if names.contains("action-exit-confirm") { showMenu() }
             else if names.contains("action-restart") { replayRound() }
@@ -264,8 +345,14 @@ final class GameScene: SKScene {
         switch action {
         case "action-play":
             mode = .playthrough
-            startRound()
-        case "action-free-play": startFreePlay()
+            if selectedWorld == .myth {
+                launchIntoTrial { [weak self] in self?.startRound() }
+            } else {
+                launchThroughPortal { [weak self] in self?.startRound() }
+            }
+        case "action-free-play":
+            guard progress.isFreePlayUnlocked(in: selectedWorld) else { startFreePlay(); return }
+            launchThroughPortal { [weak self] in self?.startFreePlay() }
         case "action-free-select": selectFreePlay()
         case "action-again": replayRound()
         case "action-next": startNextLevel()
@@ -388,20 +475,5 @@ final class GameScene: SKScene {
     func fittedFontSize(for text: String, max: CGFloat, width: CGFloat) -> CGFloat {
         guard !text.isEmpty else { return max }
         return min(max, width / (CGFloat(text.count) * 0.62))
-    }
-}
-
-/// Deterministic SplitMix64, so a round's scattered layout is stable across re-renders.
-struct SeededGenerator: RandomNumberGenerator {
-    var state: UInt64
-
-    init(seed: UInt64) { state = seed }
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
     }
 }

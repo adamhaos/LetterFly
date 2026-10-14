@@ -12,6 +12,7 @@ extension World {
         case .water: SKColor(red: 0.12, green: 0.58, blue: 0.62, alpha: 1)
         case .volcano: SKColor(red: 0.90, green: 0.35, blue: 0.12, alpha: 1)
         case .space: SKColor(red: 0.42, green: 0.32, blue: 0.75, alpha: 1)
+        case .myth: SKColor(red: 0.80, green: 0.60, blue: 0.22, alpha: 1)
         }
     }
 
@@ -24,6 +25,7 @@ extension World {
         case .water: SKColor(red: 0.02, green: 0.13, blue: 0.19, alpha: 0.8)
         case .volcano: SKColor(red: 0.14, green: 0.04, blue: 0.04, alpha: 0.8)
         case .space: SKColor(red: 0.05, green: 0.04, blue: 0.14, alpha: 0.8)
+        case .myth: SKColor(red: 0.10, green: 0.06, blue: 0.16, alpha: 0.8)
         }
     }
 
@@ -36,6 +38,7 @@ extension World {
         case .water: SKColor(red: 0.48, green: 0.90, blue: 0.92, alpha: 1)
         case .volcano: SKColor(red: 1.00, green: 0.64, blue: 0.38, alpha: 1)
         case .space: SKColor(red: 0.74, green: 0.64, blue: 1.00, alpha: 1)
+        case .myth: SKColor(red: 1.00, green: 0.86, blue: 0.52, alpha: 1)
         }
     }
 
@@ -47,6 +50,7 @@ extension World {
         case .water: "fish.fill"
         case .volcano: "flame.fill"
         case .space: "moon.stars.fill"
+        case .myth: "building.columns.fill"
         }
     }
 
@@ -58,6 +62,7 @@ extension World {
         case .water: (SKColor(red: 0.09, green: 0.40, blue: 0.48, alpha: 1), SKColor(red: 0.03, green: 0.14, blue: 0.24, alpha: 1))
         case .volcano: (SKColor(red: 0.16, green: 0.05, blue: 0.06, alpha: 1), SKColor(red: 0.40, green: 0.11, blue: 0.05, alpha: 1))
         case .space: (SKColor(red: 0.02, green: 0.02, blue: 0.09, alpha: 1), SKColor(red: 0.10, green: 0.06, blue: 0.22, alpha: 1))
+        case .myth: (SKColor(red: 0.07, green: 0.05, blue: 0.18, alpha: 1), SKColor(red: 0.36, green: 0.18, blue: 0.34, alpha: 1))
         }
     }
 
@@ -75,6 +80,7 @@ extension World {
         case .water: Self.decorateWater(root, in: bounds)
         case .volcano: Self.decorateVolcano(root, in: bounds)
         case .space: Self.decorateSpace(root, in: bounds)
+        case .myth: Self.decorateMyth(root, in: bounds)
         }
         // SKView ignores sibling order, so paint in insertion order with explicit z values.
         for (index, child) in root.children.enumerated() { child.zPosition = CGFloat(index) * 0.01 }
@@ -365,6 +371,86 @@ extension World {
             .fadeAlpha(to: 1, duration: 0.05),
             .group([.moveBy(x: 260, y: -125, duration: 0.6), .fadeOut(withDuration: 0.6)])
         ])))
+    }
+
+    /// Twilight over Olympus: twinkling stars, a temple on the horizon, golden embers
+    /// rising and a faint aurora that drifts in rainbow colors.
+    private static func decorateMyth(_ root: SKNode, in bounds: CGRect) {
+        for _ in 0..<70 {
+            let star = SKShapeNode(circleOfRadius: CGFloat.random(in: 0.5...1.4))
+            star.fillColor = SKColor(red: 1, green: 0.95, blue: 0.82, alpha: 1)
+            star.strokeColor = .clear
+            star.alpha = CGFloat.random(in: 0.2...0.8)
+            star.position = CGPoint(x: CGFloat.random(in: bounds.minX...bounds.maxX),
+                                    y: CGFloat.random(in: bounds.midY - bounds.height * 0.1...bounds.maxY))
+            root.addChild(star)
+            star.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.15, duration: Double.random(in: 1...3)),
+                .fadeAlpha(to: 0.85, duration: Double.random(in: 1...3))
+            ])))
+        }
+        // A soft aurora: wide translucent bands that slowly shift hue.
+        for index in 0..<3 {
+            let band = SKShapeNode(ellipseOf: CGSize(width: bounds.width * 1.6, height: bounds.height * 0.16))
+            band.fillColor = SKColor(hue: CGFloat(index) * 0.3, saturation: 0.6, brightness: 1, alpha: 0.07)
+            band.strokeColor = .clear
+            band.position = CGPoint(x: bounds.midX, y: bounds.maxY - bounds.height * (0.18 + 0.1 * CGFloat(index)))
+            band.zRotation = -0.12 + 0.1 * CGFloat(index)
+            root.addChild(band)
+            band.run(.repeatForever(.customAction(withDuration: 12) { node, elapsed in
+                guard let band = node as? SKShapeNode else { return }
+                let hue = (CGFloat(elapsed) / 12 + CGFloat(index) * 0.3).truncatingRemainder(dividingBy: 1)
+                band.fillColor = SKColor(hue: hue, saturation: 0.6, brightness: 1, alpha: 0.07)
+            }))
+            band.run(.repeatForever(.sequence([
+                .moveBy(x: 30, y: 6, duration: 7), .moveBy(x: -30, y: -6, duration: 7)
+            ])))
+        }
+        // A temple on the horizon: steps, six columns and a pediment.
+        let stone = SKColor(red: 0.16, green: 0.10, blue: 0.22, alpha: 0.85)
+        let width = min(bounds.width * 0.7, 340)
+        let base = bounds.minY + bounds.height * 0.06
+        let temple = SKNode()
+        temple.position = CGPoint(x: bounds.midX, y: base)
+        for (step, inset) in [(0, 0.0), (1, 0.04), (2, 0.08)] {
+            let slab = SKShapeNode(rectOf: CGSize(width: width * (1 - inset * 2), height: 8))
+            slab.fillColor = stone
+            slab.strokeColor = .clear
+            slab.position = CGPoint(x: 0, y: CGFloat(step) * 8 + 4)
+            temple.addChild(slab)
+        }
+        let columnWidth = width * 0.07
+        let columnHeight = width * 0.36
+        for index in 0..<6 {
+            let column = SKShapeNode(rectOf: CGSize(width: columnWidth, height: columnHeight))
+            column.fillColor = stone
+            column.strokeColor = .clear
+            column.position = CGPoint(x: -width * 0.36 + CGFloat(index) * width * 0.144, y: 24 + columnHeight / 2)
+            temple.addChild(column)
+        }
+        let roof = CGMutablePath()
+        roof.move(to: CGPoint(x: -width * 0.46, y: 24 + columnHeight))
+        roof.addLine(to: CGPoint(x: width * 0.46, y: 24 + columnHeight))
+        roof.addLine(to: CGPoint(x: 0, y: 24 + columnHeight + width * 0.16))
+        roof.closeSubpath()
+        let pediment = SKShapeNode(path: roof)
+        pediment.fillColor = stone
+        pediment.strokeColor = .clear
+        temple.addChild(pediment)
+        root.addChild(temple)
+        let ground = SKSpriteNode(color: stone, size: CGSize(width: bounds.width, height: base - bounds.minY + 1))
+        ground.position = CGPoint(x: bounds.midX, y: (bounds.minY + base) / 2)
+        root.addChild(ground)
+        // Golden embers drift up past the temple.
+        for _ in 0..<26 {
+            let ember = SKShapeNode(circleOfRadius: CGFloat.random(in: 1...2.4))
+            ember.fillColor = SKColor(red: 1, green: 0.8, blue: 0.4, alpha: 1)
+            ember.strokeColor = .clear
+            ember.alpha = CGFloat.random(in: 0.3...0.8)
+            root.addChild(ember)
+            loopAcross(ember, by: CGVector(dx: CGFloat.random(in: -40...40), dy: bounds.height + 40),
+                       duration: Double.random(in: 9...16), in: bounds)
+        }
     }
 
     // MARK: - Helpers

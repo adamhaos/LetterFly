@@ -49,6 +49,13 @@ final class StatsStore {
 /// Costumes for the ladybug. Each is unlocked by mastering its world (every level starred).
 enum Outfit: Int, CaseIterable {
     case none, rainHat, partyHat, racingCap, snorkel, fireHelmet, spaceHelmet
+    /// Earned by beating every Myth trial.
+    case rainbow
+
+    /// The outfits to show in the picker: the rainbow stays a secret until Myth opens.
+    static func shown(_ progress: ProgressStore) -> [Outfit] {
+        allCases.filter { $0 != .rainbow || progress.hasRainbow || progress.isUnlocked(.myth) }
+    }
 
     /// The world whose mastery unlocks this outfit.
     var world: World? {
@@ -60,6 +67,7 @@ enum Outfit: Int, CaseIterable {
         case .snorkel: .water
         case .fireHelmet: .volcano
         case .spaceHelmet: .space
+        case .rainbow: nil
         }
     }
 
@@ -72,6 +80,7 @@ enum Outfit: Int, CaseIterable {
         case .snorkel: "Snorkel"
         case .fireHelmet: "Fire Helmet"
         case .spaceHelmet: "Space Helmet"
+        case .rainbow: "Rainbow"
         }
     }
 
@@ -85,6 +94,7 @@ enum Outfit: Int, CaseIterable {
         case .snorkel: "Snorkel"
         case .fireHelmet: "Fire"
         case .spaceHelmet: "Space"
+        case .rainbow: "Rainbow"
         }
     }
 
@@ -94,6 +104,7 @@ enum Outfit: Int, CaseIterable {
     }
 
     func isUnlocked(_ progress: ProgressStore) -> Bool {
+        if self == .rainbow { return progress.hasRainbow }
         guard let world else { return true }
         return progress.isMastered(world)
     }

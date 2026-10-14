@@ -11,21 +11,33 @@ final class LetterFlyGame {
         case classic = 2
         case big = 3
         case huge = 4
+        /// The Myth world's wide 5×4 pile.
+        case grand = 5
 
-        var columns: Int { 4 }
-        var rows: Int { rawValue }
+        /// The sizes offered in Free Play.
+        static let freePlayChoices: [BoardSize] = [.classic, .big, .huge]
+
+        var columns: Int { self == .grand ? 5 : 4 }
+        var rows: Int { self == .grand ? 4 : rawValue }
         var stackCount: Int { columns * rows }
         var layerCount: Int {
             switch self {
             case .classic: 4
             case .big: 5
             case .huge: 6
+            case .grand: 4
             }
         }
-        var title: String { "4×\(rows)" }
+        var title: String { "\(columns)×\(rows)" }
         var tileCount: Int { stackCount * layerCount }
         /// Each layer spells `wordsPerLayer` hidden words, filling every stack once.
-        var wordsPerLayer: Int { self == .classic ? 1 : 2 }
+        var wordsPerLayer: Int {
+            switch self {
+            case .classic: 1
+            case .big, .huge: 2
+            case .grand: 4
+            }
+        }
         var wordLength: Int { stackCount / wordsPerLayer }
     }
 
@@ -36,6 +48,10 @@ final class LetterFlyGame {
         var letter: Character
         let isBonus: Bool
         var removed = false
+        /// Myth: Midas has turned this letter gold, worth triple.
+        var isGold = false
+        /// Myth: which Fate's thread (0–2) this letter belongs to.
+        var thread: Int?
         /// A "?" letter that stands in for any letter. `letter` still holds the letter the
         /// round's theme word needs there, which the move helpers use behind the scenes.
         var isWild = false
@@ -97,12 +113,16 @@ final class LetterFlyGame {
 
     init() { startNewRound(boardSize: .classic, world: .storm) }
 
-    func startNewRound(boardSize: BoardSize, world: World, endless: Bool = false) {
+    /// `words` stacks exactly those theme words, top layer first; otherwise `wordSeed` fixes
+    /// which theme words a round uses. Either way the letters are dealt out fresh each time.
+    func startNewRound(boardSize: BoardSize, world: World, endless: Bool = false, wordSeed: UInt64? = nil,
+                       words: [String]? = nil) {
         self.boardSize = boardSize
         self.world = world
         isEndless = endless
         let wordsPerLayer = boardSize.wordsPerLayer
-        roundWords = Array(world.words(ofLength: boardSize.wordLength).shuffled().prefix(boardSize.layerCount * wordsPerLayer))
+        roundWords = words ?? Self.pickWords(from: world.words(ofLength: boardSize.wordLength),
+                                             count: boardSize.layerCount * wordsPerLayer, seed: wordSeed)
         stacks = Array(repeating: [], count: boardSize.stackCount)
         selectedTileIDs = []
         usedWords = []
@@ -116,7 +136,8 @@ final class LetterFlyGame {
         for layer in layers.reversed() {
             let letters = layer.flatMap(Array.init).shuffled()
             for (lane, letter) in letters.enumerated() {
-                stacks[lane].append(Tile(id: nextID, letter: letter, isBonus: Int.random(in: 0..<7) == 0))
+                // Myth letters carry their own colors (gold, threads), so no red bonus letters there.
+                stacks[lane].append(Tile(id: nextID, letter: letter, isBonus: world != .myth && Int.random(in: 0..<7) == 0))
                 nextID += 1
             }
         }
@@ -128,11 +149,17 @@ final class LetterFlyGame {
             roundWords = Array(roundWords.prefix(keep * wordsPerLayer))
         }
         // Bigger boards hide one wild "?" letter somewhere in the pile.
-        if boardSize != .classic, let lane = stacks.indices.randomElement(), let index = stacks[lane].indices.randomElement() {
+        if boardSize != .classic, world != .myth, let lane = stacks.indices.randomElement(), let index = stacks[lane].indices.randomElement() {
             let tile = stacks[lane][index]
             stacks[lane][index] = Tile(id: tile.id, letter: tile.letter, isBonus: false, isWild: true)
         }
         nextTileID = nextID
+    }
+
+    static func pickWords(from words: [String], count: Int, seed: UInt64?) -> [String] {
+        guard let seed else { return Array(words.shuffled().prefix(count)) }
+        var generator = SeededGenerator(seed: seed)
+        return Array(words.shuffled(using: &generator).prefix(count)).shuffled()
     }
 
     /// The most letters the pile can hold in Endless before it topples.
@@ -140,7 +167,7 @@ final class LetterFlyGame {
 
     /// Drops a new letter onto a random stack (Endless mode). Common letters come up more often.
     @discardableResult
-    func dropLetter() -> (tile: Tile, lane: Int) {
+    func dropLetter(thread: Int? = nil) -> (tile: Tile, lane: Int) {
         let bag: [(Character, Int)] = [
             ("E", 12), ("A", 9), ("I", 8), ("O", 8), ("N", 6), ("R", 6), ("T", 6), ("L", 4), ("S", 5), ("U", 4),
             ("D", 4), ("G", 3), ("B", 2), ("C", 2), ("M", 2), ("P", 2), ("F", 2), ("H", 2), ("V", 1), ("W", 2),
@@ -153,7 +180,8 @@ final class LetterFlyGame {
             roll -= weight
         }
         let lane = stacks.indices.randomElement() ?? 0
-        let tile = Tile(id: nextTileID, letter: letter, isBonus: Int.random(in: 0..<8) == 0)
+        var tile = Tile(id: nextTileID, letter: letter, isBonus: world != .myth && Int.random(in: 0..<8) == 0)
+        tile.thread = thread
         nextTileID += 1
         stacks[lane].append(tile)
         return (tile, lane)
@@ -191,7 +219,7 @@ final class LetterFlyGame {
         for id in selectedTileIDs {
             guard let tile = tile(id: id) else { continue }
             // A wild letter is free to use but worth nothing itself.
-            let base = tile.isWild ? 0 : Self.pointValue(for: tile.letter)
+            let base = tile.isWild ? 0 : Self.pointValue(for: tile.letter) * (tile.isGold ? 3 : 1)
             points += tile.isBonus ? base * 2 : base
             mutateTile(id: id) { $0.removed = true }
         }
@@ -266,6 +294,95 @@ final class LetterFlyGame {
         return .remixed
     }
 
+    // MARK: - Myth trials
+
+    /// The stacks the given tiles sit in.
+    func lanes(of ids: [Int]) -> [Int] {
+        ids.compactMap { id in stacks.firstIndex { stack in stack.contains { $0.id == id } } }
+    }
+
+    /// Midas: turns the letter now uncovered on each of `lanes` gold. Returns the gilded ids.
+    @discardableResult
+    func gildExposed(inLanes lanes: [Int]) -> [Int] {
+        let exposed = exposedTileIDs
+        var gilded: [Int] = []
+        for lane in Set(lanes) where exposed.indices.contains(lane) {
+            guard let id = exposed[lane], tile(id: id)?.isGold == false else { continue }
+            mutateTile(id: id) { $0.isGold = true }
+            gilded.append(id)
+        }
+        return gilded
+    }
+
+    /// The Fates: gives every letter one of three thread colors, evenly mixed.
+    func assignThreads() {
+        let ids = stacks.flatMap { $0 }.map(\.id).shuffled()
+        for (index, id) in ids.enumerated() { mutateTile(id: id) { $0.thread = index % 3 } }
+    }
+
+    /// The uncovered letters, plus any already in the word bar.
+    var availableLetters: [Character] {
+        selectedTileIDs.compactMap { tile(id: $0)?.letter } +
+            exposedTileIDs.compactMap { $0 }.compactMap { tile(id: $0)?.letter }
+    }
+
+    /// Every letter still in the pile, covered or not.
+    var remainingLetters: [Character] {
+        stacks.flatMap { $0 }.filter { !$0.removed }.map(\.letter)
+    }
+
+    func canSpell(_ word: String, from letters: [Character]) -> Bool { canBuild(word.uppercased(), from: letters) }
+
+    /// Swaps covered letters up so one of `words` can be spelled from the uncovered letters,
+    /// keeping the pile's letters the same. Returns the word made available, if any.
+    @discardableResult
+    func surface(oneOf words: [String]) -> String? {
+        let exposedIDs = exposedTileIDs.compactMap { $0 }.filter { !selectedTileIDs.contains($0) }
+        let exposedLetters = exposedIDs.compactMap { tile(id: $0)?.letter }
+        let candidates = words.map { $0.uppercased() }
+        if let ready = candidates.first(where: { canBuild($0, from: exposedLetters) }) { return ready }
+        let remainingIDs = stacks.flatMap { $0.filter { !$0.removed }.map(\.id) }.filter { !selectedTileIDs.contains($0) }
+        let remaining = remainingIDs.compactMap { tile(id: $0)?.letter }
+        guard let word = candidates.first(where: { $0.count <= exposedIDs.count && canBuild($0, from: remaining) })
+        else { return nil }
+        // Keep exposed letters the word already uses; swap the rest in from below.
+        var needed = Array(word)
+        var keep = Set<Int>()
+        for id in exposedIDs {
+            guard let letter = tile(id: id)?.letter, let index = needed.firstIndex(of: letter) else { continue }
+            needed.remove(at: index)
+            keep.insert(id)
+        }
+        var targets = exposedIDs.filter { !keep.contains($0) }.makeIterator()
+        for letter in needed {
+            guard let target = targets.next(), let targetLetter = tile(id: target)?.letter,
+                  let source = remainingIDs.first(where: { !exposedIDs.contains($0) && tile(id: $0)?.letter == letter })
+            else { return nil }
+            mutateTile(id: target) { $0.letter = letter }
+            mutateTile(id: source) { $0.letter = targetLetter }
+        }
+        return word
+    }
+
+    /// Rewrites uncovered letters so `word` can be spelled, for when its letters aren't in
+    /// the pile at all. Returns false if there aren't enough uncovered letters.
+    @discardableResult
+    func plant(_ word: String) -> Bool {
+        let exposedIDs = exposedTileIDs.compactMap { $0 }.filter { !selectedTileIDs.contains($0) }
+        var needed = Array(word.uppercased())
+        var free: [Int] = []
+        for id in exposedIDs {
+            if let letter = tile(id: id)?.letter, let index = needed.firstIndex(of: letter) {
+                needed.remove(at: index)
+            } else {
+                free.append(id)
+            }
+        }
+        guard needed.count <= free.count else { return false }
+        for (id, letter) in zip(free, needed) { mutateTile(id: id) { $0.letter = letter } }
+        return true
+    }
+
     private var knownUnusedWords: [String] {
         let unusedRoundWords = roundWords.filter { !usedWords.contains($0.lowercased()) }
         let common = Self.commonWords
@@ -299,5 +416,20 @@ final class LetterFlyGame {
             change(&stacks[lane][index])
             return
         }
+    }
+}
+
+/// Deterministic SplitMix64, for repeatable word picks and a stable pile layout across re-renders.
+struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }

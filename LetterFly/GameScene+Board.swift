@@ -10,9 +10,15 @@ extension GameScene {
         let landscape = safe.width > safe.height
         let hudY = safe.maxY - 28
         drawHUD(in: CGRect(x: safe.minX + 8, y: hudY - 26, width: safe.width - 16, height: 52))
-        drawThemeDots(centerX: safe.midX, y: hudY - 42)
-
-        let pileTop = hudY - 54
+        var pileTop = hudY - 54
+        if trial != nil {
+            // Trials show their next step (or riddle), with the star words just below.
+            drawTrialBanner(in: CGRect(x: safe.minX + 12, y: hudY - 82, width: safe.width - 24, height: 46))
+            drawThemeDots(centerX: safe.midX, y: hudY - 96)
+            pileTop = hudY - 108
+        } else {
+            drawThemeDots(centerX: safe.midX, y: hudY - 42)
+        }
         if landscape {
             let controlsX = safe.minX + safe.width * 0.62
             let controlsWidth = safe.width * 0.35
@@ -32,6 +38,10 @@ extension GameScene {
     /// Before the goal: a slim progress bar toward it. After: a pill that finishes the level now.
     func drawGoalBar(center: CGPoint, width: CGFloat) {
         goalBarCenter = activeLevel == nil ? nil : center
+        if trial != nil {
+            drawTrialBar(center: center, width: width)
+            return
+        }
         guard let level = activeLevel else { return }
         let world = game.world
         guard game.score >= level.targetScore else {
@@ -78,19 +88,23 @@ extension GameScene {
         addIconButton(systemName: "pause.fill", name: "action-exit", size: CGSize(width: 40, height: 36),
                       fillColor: Self.glassButton, iconColor: .white, stroke: Self.glassEdge,
                       at: CGPoint(x: rect.minX + 28, y: rect.midY))
-        let subtitle = activeLevel.map { $0.isBoss ? "BOSS LEVEL" : "LEVEL \($0.number)" }
+        let subtitle = trial.map { $0.kind.shortTitle.uppercased() }
+            ?? activeLevel.map { $0.isBoss ? "BOSS LEVEL" : "LEVEL \($0.number)" }
             ?? (game.isEndless ? "ENDLESS" : "FREE PLAY")
         addLabel(world.title.uppercased(), font: "AvenirNext-Heavy", size: 16, color: world.accentLight,
                  at: CGPoint(x: rect.minX + 58, y: rect.midY + 7), alignment: .left)
         addLabel(subtitle, font: "AvenirNext-Bold", size: 9, color: Self.glassSubtext,
                  at: CGPoint(x: rect.minX + 58, y: rect.midY - 10), alignment: .left)
 
-        let scoreColor = activeLevel.map { game.score >= $0.targetScore ? Palette.mint : .white } ?? .white
+        let scoreColor = trial == nil ? activeLevel.map { game.score >= $0.targetScore ? Palette.mint : .white } ?? .white : .white
         addSmallStat(title: "TIME", value: clockText, x: rect.maxX - 14, y: rect.midY, name: "clock-label",
                      valueColor: clockColor, titleColor: Self.glassSubtext)
         addSmallStat(title: "SCORE", value: "\(displayedScore)", x: rect.maxX - 66, y: rect.midY, name: "score-label",
                      valueColor: scoreColor, titleColor: Self.glassSubtext)
-        if let level = activeLevel {
+        if let trial {
+            addSmallStat(title: "TRIAL", value: "\(min(trial.progress, trial.kind.goal))/\(trial.kind.goal)",
+                         x: rect.maxX - 120, y: rect.midY, valueColor: Self.glassSubtext, titleColor: Self.glassSubtext)
+        } else if let level = activeLevel {
             addSmallStat(title: "GOAL", value: "\(level.targetScore)", x: rect.maxX - 120, y: rect.midY,
                          valueColor: Self.glassSubtext, titleColor: Self.glassSubtext)
         } else if game.isEndless {
@@ -99,21 +113,43 @@ extension GameScene {
         }
     }
 
-    /// One dot per hidden theme word, filled as each is found.
+    /// One ball per star word under the top bar, filled for every one found so far (on any
+    /// play of this level); this round's finds wear a white ring.
     func drawThemeDots(centerX: CGFloat, y: CGFloat) {
-        let count = game.roundWords.count
-        let found = game.foundThemeWordCount
-        let spacing: CGFloat = 13
-        let startX = centerX - CGFloat(count - 1) * spacing / 2
-        for index in 0..<count {
-            let dot = SKShapeNode(circleOfRadius: 4.5)
-            dot.fillColor = index < found ? Palette.gold : .clear
-            dot.strokeColor = index < found ? Palette.gold : SKColor(white: 1, alpha: 0.6)
-            dot.lineWidth = 1.5
-            dot.position = CGPoint(x: startX + CGFloat(index) * spacing, y: y)
-            dot.zPosition = 2
-            addChild(dot)
+        let count = starWords.count
+        let thisRound = starWordsFoundThisRound
+        let collected = activeLevel.map(collectedThemeWords) ?? thisRound
+        // Balls fill left to right: every star word found so far, ringed if found this round.
+        let row = makeStarBalls(total: count, filled: collected, ringed: (collected - thisRound)..<collected,
+                                radius: 6, spacing: 18, empty: SKColor(white: 1, alpha: 0.6))
+        row.position = CGPoint(x: centerX, y: y)
+        row.zPosition = 2
+        row.name = "star-balls"
+        addChild(row)
+        let width = CGFloat(count - 1) * 18
+        addLabel("STAR WORDS", font: "AvenirNext-Heavy", size: 9, color: Self.glassSubtext,
+                 at: CGPoint(x: centerX - width / 2 - 14, y: y), alignment: .right, z: 2)
+        addLabel("\(collected)/\(count)", font: "AvenirNext-Heavy", size: 10,
+                 color: collected == count ? Palette.gold : Self.glassSubtext,
+                 at: CGPoint(x: centerX + width / 2 + 14, y: y), alignment: .left, z: 2)
+    }
+
+    /// A row of star-word balls centered on the origin: `filled` gold ones, then empty rings.
+    func makeStarBalls(total: Int, filled: Int, ringed: Range<Int> = 0..<0, radius: CGFloat, spacing: CGFloat,
+                       empty: SKColor) -> SKNode {
+        let row = SKNode()
+        let startX = -CGFloat(total - 1) * spacing / 2
+        for index in 0..<total {
+            let ball = SKShapeNode(circleOfRadius: radius)
+            let isFilled = index < filled
+            ball.fillColor = isFilled ? Palette.gold : .clear
+            ball.strokeColor = isFilled ? (ringed.contains(index) ? .white : Palette.gold) : empty
+            ball.lineWidth = isFilled && ringed.contains(index) ? 2 : 1.5
+            ball.position = CGPoint(x: startX + CGFloat(index) * spacing, y: 0)
+            ball.name = "star-ball-\(index)"
+            row.addChild(ball)
         }
+        return row
     }
 
     static let rules: [(symbol: String, title: String, text: String)] = [
@@ -124,7 +160,7 @@ extension GameScene {
         ("star.fill", "Score points",
          "Rare letters like Q, Z, X and J are worth the most. A word's letter values are multiplied by its length minus 2, so longer words pay far more."),
         ("sparkles", "Bonuses",
-         "Red letters count double. Each round hides themed words — spell one for double points. The dots under the top bar track them."),
+         "Red letters count double. Each round hides themed words — spell one for double points. Each level has 4 star words, tracked by the dots under the top bar. Ones you haven't found yet start on top, and finds carry over between plays: get all 4 for the level's star."),
         ("timer", "Beat the clock",
          "Clear every letter before time runs out for 5 bonus points per second left."),
         ("flag.checkered", "Playthrough",
@@ -228,7 +264,8 @@ extension GameScene {
         title.position = CGPoint(x: 0, y: top - 82)
         title.zPosition = 2
         panel.addChild(title)
-        let roundName = activeLevel.map { $0.isBoss ? "\(world.title) boss level" : "\(world.title) level \($0.number)" }
+        let roundName = trial.map { "Myth trial: \($0.kind.title)" }
+            ?? activeLevel.map { $0.isBoss ? "\(world.title) boss level" : "\(world.title) level \($0.number)" }
             ?? (game.isEndless ? "\(world.title) Endless" : "\(world.title) Free Play")
         let subtitle = makeLabel(roundName, font: "AvenirNext-DemiBold", size: 13, color: Palette.muted)
         subtitle.position = CGPoint(x: 0, y: top - 106)
@@ -386,19 +423,20 @@ extension GameScene {
 
         let actionY = area.maxY - 104
         let smallWidth = min(74, (cardWidth - 176) / 2)
+        let eraseTint = tintedGlass(Self.eraseRed, world: world)
         addButton(title: "CLEAR", name: "action-clear", size: CGSize(width: smallWidth, height: 42),
-                  color: Self.glassButton, at: CGPoint(x: area.minX + smallWidth / 2, y: actionY), fontSize: 11)
+                  color: eraseTint, at: CGPoint(x: area.minX + smallWidth / 2, y: actionY), fontSize: 11)
         addButton(title: "SUBMIT", name: "action-submit", size: CGSize(width: 150, height: 48),
                   color: world.accent, at: CGPoint(x: area.midX, y: actionY))
         addIconButton(systemName: "delete.backward.fill", name: "action-undo",
-                      size: CGSize(width: smallWidth, height: 42), fillColor: Self.glassButton, iconColor: .white,
+                      size: CGSize(width: smallWidth, height: 42), fillColor: eraseTint, iconColor: .white,
                       stroke: Self.glassEdge, at: CGPoint(x: area.maxX - smallWidth / 2, y: actionY))
 
         let lowerY = area.minY + 22
         addButton(title: "HINT", name: "action-hint", size: CGSize(width: 76, height: 36),
                   color: Palette.gold, at: CGPoint(x: area.minX + 38, y: lowerY), fontSize: 12)
         addButton(title: "MIX", name: "action-shuffle", size: CGSize(width: 66, height: 36),
-                  color: Self.glassButton, at: CGPoint(x: area.maxX - 33, y: lowerY), fontSize: 12)
+                  color: tintedGlass(Self.mixGreen, world: world), at: CGPoint(x: area.maxX - 33, y: lowerY), fontSize: 12)
         // Long messages wrap onto a second line instead of shrinking to an unreadable size.
         let status = addLabel(statusMessage, font: "AvenirNext-DemiBold", size: 12,
                               color: onGlass(statusColor), at: CGPoint(x: area.midX, y: lowerY), alignment: .center,
@@ -412,6 +450,14 @@ extension GameScene {
     }
 
     static let glassEdge = SKColor(white: 1, alpha: 0.10)
+    static let eraseRed = SKColor(red: 0.86, green: 0.36, blue: 0.34, alpha: 1)
+    static let mixGreen = SKColor(red: 0.36, green: 0.70, blue: 0.48, alpha: 1)
+
+    /// A muted, see-through tint for a control, pulled a little toward the world's accent
+    /// so it sits in every world's glass panel.
+    func tintedGlass(_ color: SKColor, world: World) -> SKColor {
+        Palette.mix(color, world.accent, 0.2).withAlphaComponent(0.42)
+    }
     static let glassButton = SKColor(white: 1, alpha: 0.14)
     static let glassSubtext = SKColor(white: 1, alpha: 0.62)
 
@@ -436,7 +482,7 @@ extension GameScene {
         let font = UIFont(name: "AvenirNext-Heavy", size: fontSize) ?? .boldSystemFont(ofSize: fontSize)
         let text = NSMutableAttributedString()
         for tile in tiles {
-            let color = tile.isWild ? Palette.gold : (tile.isBonus ? Palette.bonusLetter : SKColor.white)
+            let color = letterColor(for: tile)
             text.append(NSAttributedString(string: String(tile.shown), attributes: [
                 .font: font,
                 .foregroundColor: hiddenInWord.contains(tile.id) ? SKColor.clear : color

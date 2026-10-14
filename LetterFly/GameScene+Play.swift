@@ -130,7 +130,7 @@ extension GameScene {
                            duration: TimeInterval = 0.24, arc: Bool = false,
                            completion: @escaping () -> Void) {
         let ghost = makeLabel(String(tile.shown), font: "AvenirNext-Heavy", size: pileFontSize,
-                              color: tile.isWild ? Palette.gold : (tile.isBonus ? Palette.bonusLetter : .white))
+                              color: letterColor(for: tile))
         ghost.position = from
         ghost.zRotation = rotation
         ghost.setScale(scale)
@@ -190,12 +190,26 @@ extension GameScene {
         guard !game.usedWords.contains(word) else { rejectWord("You already found \(word.uppercased())"); return }
         guard isValidWord(word) else { rejectWord("Not in the dictionary"); return }
 
+        let playedTiles = game.selectedTiles
+        let playedLanes = game.lanes(of: game.selectedTileIDs)
         let result = game.commitSelection(as: word)
         if tutorialStep == .spellAndSubmit { tutorialStep = .goalBar }
         statusMessage = result.isThemeWord
             ? "\(game.world.title.uppercased()) WORD! +\(result.points)"
             : "+\(result.points)  \(word.uppercased())"
+        if result.isThemeWord, let level = activeLevel, level.starWords.contains(result.word.uppercased()),
+           progress.recordFoundWord(result.word, in: level) {
+            let found = collectedThemeWords(in: level)
+            if found == level.starWords.count, progress.recordStar(for: level) {
+                isNewStar = true
+                statusMessage = "ALL \(game.world.title.uppercased()) WORDS! STAR EARNED"
+            } else {
+                statusMessage = "NEW STAR WORD! \(found)/\(level.starWords.count)"
+            }
+            showStarWordSplash(word: result.word, found: found, total: level.starWords.count)
+        }
         statusColor = result.isThemeWord ? Palette.gold : Palette.teal
+        if trial != nil { recordTrialWord(result, tiles: playedTiles, lanes: playedLanes) }
         sound.play(result.isThemeWord ? .themeWord : .accept)
         result.isThemeWord ? haptics.themeWord() : haptics.success()
         stats.recordWord(result.word, isThemeWord: result.isThemeWord)
@@ -211,6 +225,12 @@ extension GameScene {
 
     func completeAcceptedWord() {
         isAnimatingFeedback = false
+        // The clock may have run out while the word was animating.
+        guard screen == .playing else { return }
+        if trial != nil {
+            finishTrialTurn()
+            return
+        }
         if game.isEndless, game.remainingTileCount < 6 || game.prepareNextMove() == .none {
             // Endless never runs dry: refill instead of ending.
             countUpScore()
@@ -251,12 +271,21 @@ extension GameScene {
     }
 
     func isValidWord(_ word: String) -> Bool {
+        // The system spell checker skips very long strings (it accepts 30 random letters),
+        // so anything past a real word's length is rejected outright.
+        guard word.count <= 15 else { return false }
         if game.roundWords.contains(word.uppercased()) || LetterFlyGame.commonWords.contains(word) { return true }
+        // Myth names like CIRCE may not be in the system dictionary.
+        if game.world == .myth && World.mythWords.contains(word.uppercased()) { return true }
         let range = NSRange(location: 0, length: (word as NSString).length)
         return checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: "en_US").location == NSNotFound
     }
 
     func showHint() {
+        if trial != nil {
+            showTrialHint()
+            return
+        }
         guard let word = game.bestAvailableRoundWord(), let first = word.first, let last = word.last else {
             flyInHintBug(saying: "Keep uncovering letters!")
             return
@@ -267,8 +296,8 @@ extension GameScene {
 
     /// The mascot zips in from the left, says the hint, then flies back off.
     func flyInHintBug(saying text: String) {
-        overlay.removeAllChildren()
-        let safe = safeFrame
+        // Clear any earlier hint, but leave a star-word splash alone.
+        overlay.children.filter { $0.name != "star-splash" }.forEach { $0.removeFromParent() }
         let bug = makeLogo(size: 58)
         bug.setScale(0.7)
         overlay.addChild(bug)

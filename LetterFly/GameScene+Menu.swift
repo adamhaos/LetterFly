@@ -7,12 +7,16 @@ extension GameScene {
 
     func render() {
         pressedNode = nil
-        for child in children where child !== backdrop && child !== overlay { child.removeFromParent() }
+        for child in children where child !== backdrop && child !== overlay && child !== transitionLayer {
+            child.removeFromParent()
+        }
         if screen != .playing { overlay.removeAllChildren() }
         updateBackground()
         switch screen {
         case .menu:
             drawMenu()
+            isDrawingMenuOverlay = true
+            defer { isDrawingMenuOverlay = false }
             switch menuOverlay {
             case .rules: drawRules()
             case .settings: drawSettings()
@@ -23,12 +27,13 @@ extension GameScene {
         case .playing:
             drawGame()
             drawTutorial()
+            drawTrialIntro()
             if isConfirmingExit { drawExitConfirmation() }
         case .finished: drawFinished()
         }
         // Ease each new screen in rather than cutting to it.
         if lastRenderedScreen != screen {
-            for child in children where child !== backdrop && child !== overlay {
+            for child in children where child !== backdrop && child !== overlay && child !== transitionLayer {
                 child.alpha = 0
                 child.run(.fadeIn(withDuration: 0.22))
             }
@@ -37,13 +42,12 @@ extension GameScene {
     }
 
     /// Rebuilds the backdrop only when the world, screen style or scene size changes,
-    /// cross-fading from the old one. The menu shows the selected world under a cream
-    /// veil so it reads as a quiet background.
+    /// cross-fading from the old one. The menu shows the selected world under a deep,
+    /// tinted veil so it reads as a quiet background, whatever the phone's appearance.
     func updateBackground() {
         let onMenu = screen == .menu
         let world = onMenu ? selectedWorld : game.world
-        let dark = isDarkMode
-        let key = "\(world.rawValue) \(onMenu) \(dark) \(Int(size.width))x\(Int(size.height))"
+        let key = "\(world.rawValue) \(onMenu) \(Int(size.width))x\(Int(size.height))"
         guard key != backgroundKey else { return }
         let sizeChanged = !backgroundKey.hasSuffix("\(Int(size.width))x\(Int(size.height))")
         backgroundKey = key
@@ -51,10 +55,8 @@ extension GameScene {
         let layer = world.makeBackground(size: size)
         layer.zPosition = 0
         if onMenu {
-            // A cream veil by day, a deep tinted one in dark mode.
-            let veil = SKSpriteNode(color: dark ? Palette.mix(Palette.ink, world.accent, 0.18)
-                                                : Palette.mix(Palette.cream, world.accent, 0.12), size: size)
-            veil.alpha = dark ? 0.8 : 0.84
+            let veil = SKSpriteNode(color: Palette.mix(Palette.ink, world.accent, 0.18), size: size)
+            veil.alpha = 0.8
             veil.zPosition = 50
             layer.addChild(veil)
         }
@@ -69,8 +71,6 @@ extension GameScene {
         backdrop.addChild(layer)
         backgroundLayer = layer
     }
-
-    var isDarkMode: Bool { view?.traitCollection.userInterfaceStyle == .dark }
 
     var safeFrame: CGRect {
         guard let view else { return frame }
@@ -110,6 +110,11 @@ extension GameScene {
                       fillColor: theme.card, iconColor: theme.deepAccent, stroke: theme.stroke,
                       at: CGPoint(x: safe.minX + 30, y: safe.maxY - 24))
 
+        if selectedWorld == .myth {
+            drawMythMenu(in: safe)
+            return
+        }
+        mythBugStop = nil
         if safe.width > safe.height {
             drawLandscapeMenu(in: safe)
             return
@@ -119,7 +124,7 @@ extension GameScene {
         var blocks: [(height: CGFloat, draw: (CGFloat) -> Void)] = []
         if !compact {
             blocks.append((104, { [unowned self] y in
-                let logo = makeLogo(size: 120)
+                let logo = makeLogo(size: Self.homeLogoSize)
                 logo.name = "home-logo"
                 logo.position = CGPoint(x: safe.midX, y: y)
                 addTapTarget(to: logo, size: CGSize(width: 130, height: 110))
@@ -128,7 +133,7 @@ extension GameScene {
         }
         blocks.append((44, { [unowned self] y in
             addLabel("LETTERFLY", font: "AvenirNext-Heavy", size: compact ? 40 : 46,
-                     color: isDarkMode ? Palette.cream : Palette.ink,
+                     color: Palette.cream,
                      at: CGPoint(x: safe.midX, y: y), alignment: .center, name: "home-title")
         }))
         blocks.append((setupCardHeight, { [unowned self] y in
@@ -150,7 +155,7 @@ extension GameScene {
         let leftWidth = min(330, safe.width * 0.42)
         let blocks: [(height: CGFloat, draw: (CGFloat) -> Void)] = [
             (40, { [unowned self] y in
-                addLabel("LETTERFLY", font: "AvenirNext-Heavy", size: 38, color: isDarkMode ? Palette.cream : Palette.ink,
+                addLabel("LETTERFLY", font: "AvenirNext-Heavy", size: 38, color: Palette.cream,
                          at: CGPoint(x: leftX, y: y), alignment: .center)
             }),
             (50, { [unowned self] y in
@@ -171,7 +176,7 @@ extension GameScene {
     }
     var playButtonAction: String { showingFreePlay ? "action-free-play" : "action-play" }
 
-    var setupCardHeight: CGFloat { showingFreePlay ? 330 : 236 }
+    var setupCardHeight: CGFloat { showingFreePlay ? 330 : 250 }
 
     /// The menu card: world picker on top, then the world's levels.
     func drawSetupCard(center: CGPoint, width: CGFloat) {
@@ -186,7 +191,7 @@ extension GameScene {
         let left = center.x - width / 2 + 18
         let inner = width - 30
 
-        addLabel("WORLD", font: "AvenirNext-Bold", size: 11, color: Palette.muted,
+        addLabel("WORLD", font: "AvenirNext-Bold", size: 11, color: theme.subtext,
                  at: CGPoint(x: left, y: top - 24), alignment: .left, z: 4)
         addLabel(selectedWorld.title.uppercased(), font: "AvenirNext-Heavy", size: 11, color: theme.deepAccent,
                  at: CGPoint(x: center.x + width / 2 - 18, y: top - 24), alignment: .right, z: 4)
@@ -196,12 +201,15 @@ extension GameScene {
     }
 
     func drawWorldChoices(centerX: CGFloat, y: CGFloat, width: CGFloat) {
-        let gap: CGFloat = 7
-        let count = CGFloat(World.allCases.count)
+        // Wide enough that neighboring tiles' progress rings don't run together.
+        let gap: CGFloat = 12
+        // Myth stays a secret until every main world is mastered.
+        let worlds = World.main + (progress.isUnlocked(.myth) ? [.myth] : [])
+        let count = CGFloat(worlds.count)
         let chipWidth = (width - gap * (count - 1)) / count
         let chipSize = CGSize(width: chipWidth, height: 58)
         markExistingUnlocksSeen()
-        for world in World.allCases {
+        for world in worlds {
             let unlocked = progress.isUnlocked(world)
             let selected = world == selectedWorld
             let name = "action-world-\(world.rawValue)"
@@ -276,6 +284,7 @@ extension GameScene {
         let points = Self.roundedRectPerimeter(size: ringSize, radius: 14, samples: 180)
         let segments = Level.countPerWorld
         let beaten = progress.levelsBeaten(in: world)
+        let theme = menuTheme
         let per = points.count / segments
         for index in 0..<segments {
             let level = Level(world: world, number: index + 1)
@@ -287,8 +296,7 @@ extension GameScene {
             segment.lineWidth = selected ? 3.5 : 2.5
             segment.lineCap = .round
             segment.strokeColor = progress.hasStar(level) ? Palette.gold
-                : (index < beaten ? (selected ? world.accentLight : SKColor(white: 1, alpha: 0.95))
-                                  : Palette.ink.withAlphaComponent(0.18))
+                : (index < beaten ? (selected ? world.accentLight : theme.notchDone) : theme.notchOpen)
             segment.zPosition = 2
             chip.addChild(segment)
         }
@@ -359,7 +367,7 @@ extension GameScene {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: "seenUnlock.initialized") else { return }
         defaults.set(true, forKey: "seenUnlock.initialized")
-        for world in World.allCases where progress.isUnlocked(world) {
+        for world in World.main where progress.isUnlocked(world) {
             defaults.set(true, forKey: "seenUnlock.\(world.rawValue)")
         }
     }
@@ -401,6 +409,11 @@ extension GameScene {
             .run { [weak self, weak logo] in
                 guard let self, let logo, logo.action(forKey: "fly-across") == nil,
                       logo.action(forKey: "roam") == nil else { return }
+                // A bit more than half the time she lands at the end of the title, so her Y spells LETTERFLYY.
+                if Double.random(in: 0..<1) < 0.6 {
+                    self.spellName(logo, title: title, home: home)
+                    return
+                }
                 let perch = CGPoint(x: home.x + CGFloat.random(in: -halfWidth...halfWidth), y: titleTop)
                 self.flyMascot(logo, to: perch, then: [
                     .wait(forDuration: 2.5),
@@ -412,6 +425,34 @@ extension GameScene {
             }
         ])), withKey: "roam-timer")
     }
+
+    /// Flies the mascot to the end of the title with her tile lined up as its last letter,
+    /// sliding the title over so the whole name stays centered, then flies her home.
+    func spellName(_ logo: SKNode, title: SKNode, home: CGPoint) {
+        let size = Self.homeLogoSize
+        let scale: CGFloat = 1.3
+        let tileWidth = 0.30 * size * scale
+        let shift = tileWidth / 2 + 3
+        let tileCenter = CGPoint(x: title.position.x + title.frame.width / 2 - shift + 1 + tileWidth / 2,
+                                 y: title.position.y + 3)
+        // The tile hangs below and to the right of the bug's center (see `makeLogo`).
+        let perch = CGPoint(x: tileCenter.x - 0.24 * size * scale, y: tileCenter.y + 0.31 * size * scale)
+        let slide = SKAction.moveBy(x: -shift, y: 0, duration: 0.9)
+        slide.timingMode = .easeInEaseOut
+        title.run(.sequence([.wait(forDuration: 0.2), slide]))
+        logo.run(.scale(to: scale, duration: 1.1))
+        flyMascot(logo, to: perch, then: [
+            .wait(forDuration: 3.5),
+            .run { [weak self, weak logo, weak title] in
+                guard let self, let logo else { return }
+                title?.run(slide.reversed())
+                logo.run(.scale(to: 1, duration: 1.1))
+                self.flyMascot(logo, to: home, then: [])
+            }
+        ])
+    }
+
+    static let homeLogoSize: CGFloat = 120
 
     /// Flies the mascot along a gentle arc to `target`, facing its direction of travel.
     func flyMascot(_ logo: SKNode, to target: CGPoint, then after: [SKAction]) {
@@ -450,7 +491,7 @@ extension GameScene {
         let level = selectedLevel
         let theme = menuTheme
         let beaten = progress.levelsBeaten(in: level.world)
-        addLabel("LEVEL", font: "AvenirNext-Bold", size: 11, color: Palette.muted,
+        addLabel("LEVEL", font: "AvenirNext-Bold", size: 11, color: theme.subtext,
                  at: CGPoint(x: left, y: top - 12), alignment: .left, z: 4)
         let stars = progress.starCount(in: level.world)
         var header: [InlinePart] = beaten >= Level.countPerWorld
@@ -475,7 +516,7 @@ extension GameScene {
         let freeOpen = progress.isFreePlayUnlocked(in: level.world)
         let freeChip = roundedRect(size: CGSize(width: 44, height: 40), radius: 14,
                                    fill: showingFreePlay ? theme.deepAccent : theme.chip,
-                                   stroke: showingFreePlay ? theme.deepAccent : Palette.ink.withAlphaComponent(freeOpen ? 0.25 : 0.1))
+                                   stroke: showingFreePlay ? theme.deepAccent : theme.line.withAlphaComponent(freeOpen ? 0.25 : 0.1))
         freeChip.lineWidth = showingFreePlay ? 3 : 1.5
         freeChip.position = CGPoint(x: freeX, y: rowY)
         freeChip.zPosition = 5
@@ -484,7 +525,7 @@ extension GameScene {
         if freeOpen {
             freeChip.addChild(makeLabel("FREE", font: "AvenirNext-Heavy", size: 11,
                                         color: showingFreePlay ? .white : theme.deepAccent, name: "action-free-select"))
-        } else if let lock = makeSymbol("lock.fill", pointSize: 13, color: Palette.muted.withAlphaComponent(0.6)) {
+        } else if let lock = makeSymbol("lock.fill", pointSize: 13, color: theme.subtext.withAlphaComponent(0.6)) {
             lock.name = "action-free-select"
             freeChip.addChild(lock)
         }
@@ -497,13 +538,13 @@ extension GameScene {
             let x = centerX + (CGFloat(number) - (slots + 1) / 2) * spacing
             let dot = SKShapeNode(circleOfRadius: 20)
             dot.fillColor = isBeaten ? theme.accent : (selected ? theme.card : theme.chip)
-            dot.strokeColor = selected ? theme.deepAccent : Palette.ink.withAlphaComponent(playable ? 0.25 : 0.1)
+            dot.strokeColor = selected ? theme.deepAccent : theme.line.withAlphaComponent(playable ? 0.25 : 0.1)
             dot.lineWidth = selected ? 3 : 1.5
             dot.position = CGPoint(x: x, y: rowY)
             dot.zPosition = 5
             dot.name = name
             addChild(dot)
-            let textColor = isBeaten ? .white : Palette.ink.withAlphaComponent(playable ? 1 : 0.25)
+            let textColor = isBeaten ? .white : theme.text.withAlphaComponent(playable ? 1 : 0.25)
             if candidate.isBoss {
                 // The boss level wears a crown instead of a number.
                 dot.fillColor = isBeaten ? Palette.coral : dot.fillColor
@@ -537,23 +578,46 @@ extension GameScene {
             ? "BOSS: score \(level.targetScore)  •  \(level.world.bossTwist)"
             : "Score \(level.targetScore) in \(Int(level.duration)) sec  •  \(level.boardSize.title) pile"
         addLabel(info, font: "AvenirNext-DemiBold", size: fittedFontSize(for: info, max: 13, width: width + 10),
-                 color: level.isBoss ? Palette.coral : Palette.ink,
+                 color: level.isBoss ? Palette.coral : theme.text,
                  at: CGPoint(x: centerX, y: top - 94), alignment: .center, z: 4)
-        addLabel(unlockNote(for: level.world), font: "AvenirNext-Medium", size: 11, color: Palette.muted,
-                 at: CGPoint(x: centerX, y: top - 115), alignment: .center, z: 4)
+        drawStarWordRow(for: level, centerX: centerX, y: top - 122)
     }
 
-    func unlockNote(for world: World) -> String {
-        guard let next = world.next else { return "Spell \(world.title.lowercased()) words for double points" }
-        let remaining = Level.countToUnlockNext - progress.levelsBeaten(in: world)
-        if remaining <= 0 { return "\(next.title) is unlocked" }
-        return "Beat \(remaining) more to unlock \(next.title)"
+    /// The selected level's star words: one ball per word, filled for each found so far,
+    /// laid out as one centered row ("STAR WORDS ●●○○ 2/4").
+    func drawStarWordRow(for level: Level, centerX: CGFloat, y: CGFloat) {
+        let theme = menuTheme
+        let total = level.starWords.count
+        let found = progress.hasStar(level) ? total : collectedThemeWords(in: level)
+        let done = found == total
+        let spacing: CGFloat = 20
+        let radius: CGFloat = 7
+        let gap: CGFloat = 12
+        let label = makeLabel("STAR WORDS", font: "AvenirNext-Heavy", size: 10, color: theme.deepAccent, alignment: .left)
+        let status = makeInlineRow(done ? [.symbol("star.fill"), .text("EARNED")] : [.text("\(found)/\(total)")],
+                                   font: "AvenirNext-Heavy", size: 10, color: done ? Palette.gold : theme.deepAccent,
+                                   symbolColor: Palette.gold, alignment: .left)
+        let balls = makeStarBalls(total: total, filled: found, radius: radius, spacing: spacing,
+                                  empty: theme.line.withAlphaComponent(0.25))
+        let ballsWidth = CGFloat(total - 1) * spacing + radius * 2
+        let statusWidth = status.calculateAccumulatedFrame().width
+        let width = label.frame.width + gap + ballsWidth + gap + statusWidth
+        var x = centerX - width / 2
+        label.position = CGPoint(x: x, y: y)
+        x += label.frame.width + gap
+        balls.position = CGPoint(x: x + ballsWidth / 2, y: y)
+        x += ballsWidth + gap
+        status.position = CGPoint(x: x, y: y)
+        for node in [label, balls, status] {
+            node.zPosition = 4
+            addChild(node)
+        }
     }
 
     func drawBoardChoices(centerX: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {
         let gap: CGFloat = 8
         let optionWidth = (width - gap * 2) / 3
-        for (index, board) in LetterFlyGame.BoardSize.allCases.enumerated() {
+        for (index, board) in LetterFlyGame.BoardSize.freePlayChoices.enumerated() {
             let x = centerX - width / 2 + optionWidth / 2 + CGFloat(index) * (optionWidth + gap)
             addChoiceButton(title: board.title, subtitle: "\(board.tileCount) letters", name: "action-board-\(board.rows)",
                             size: CGSize(width: optionWidth, height: height), selected: selectedBoardSize == board,

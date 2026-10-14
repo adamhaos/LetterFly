@@ -111,7 +111,7 @@ extension GameScene {
         }
     }
 
-    func emitCelebration(from origin: CGPoint, count: Int) {
+    func emitCelebration(from origin: CGPoint, count: Int, in parent: SKNode? = nil) {
         let colors = [Palette.coral, Palette.gold, Palette.teal, Palette.ink]
         for index in 0..<count {
             let particle: SKShapeNode
@@ -125,7 +125,7 @@ extension GameScene {
             particle.position = origin
             particle.zPosition = 35
             particle.zRotation = CGFloat.random(in: 0...(.pi * 2))
-            addChild(particle)
+            (parent ?? self).addChild(particle)
             let angle = CGFloat.random(in: 0...(.pi * 2))
             let distance = CGFloat.random(in: 65...150)
             let destination = CGVector(dx: cos(angle) * distance, dy: sin(angle) * distance + 28)
@@ -184,5 +184,125 @@ extension GameScene {
             self?.isAnimatingFeedback = false
             self?.render()
         }]))
+    }
+
+    // MARK: Star word splash
+
+    /// A star word was found: the screen dims, a gold star bursts in with spinning rays,
+    /// the word spells itself out, and the level's balls fill in ("2 OF 4 FOUND").
+    /// The clock waits while it's up; a tap dismisses it early.
+    func showStarWordSplash(word: String, found: Int, total: Int) {
+        isShowingStarSplash = true
+        let complete = found == total
+        let safe = safeFrame
+        let center = CGPoint(x: safe.midX, y: safe.midY + 40)
+        let splash = SKNode()
+        splash.name = "star-splash"
+        splash.zPosition = 20
+        overlay.addChild(splash)
+
+        let dimmer = SKSpriteNode(color: Palette.ink, size: size)
+        dimmer.alpha = 0
+        splash.addChild(dimmer)
+        dimmer.run(.fadeAlpha(to: 0.72, duration: 0.2))
+
+        // Rays spin slowly behind the star.
+        let rays = SKNode()
+        rays.position = CGPoint(x: center.x, y: center.y + 70)
+        rays.zPosition = 1
+        splash.addChild(rays)
+        for index in 0..<12 {
+            let ray = SKShapeNode(rectOf: CGSize(width: 10, height: 150), cornerRadius: 5)
+            ray.fillColor = Palette.gold.withAlphaComponent(0.18)
+            ray.strokeColor = .clear
+            ray.zRotation = CGFloat(index) * .pi / 6
+            rays.addChild(ray)
+        }
+        rays.setScale(0)
+        rays.run(.group([.scale(to: 1, duration: 0.35), .repeatForever(.rotate(byAngle: .pi, duration: 4))]))
+
+        let star = makeStar(radius: complete ? 46 : 38)
+        star.position = rays.position
+        star.zPosition = 2
+        star.setScale(0)
+        splash.addChild(star)
+        let pop = SKAction.scale(to: 1.25, duration: 0.22)
+        pop.timingMode = .easeOut
+        star.run(.sequence([.group([pop, .rotate(byAngle: .pi * 2, duration: 0.4)]), .scale(to: 1, duration: 0.14),
+                            .repeatForever(.sequence([.scale(to: 1.08, duration: 0.5), .scale(to: 1, duration: 0.5)]))]))
+
+        let title = makeLabel(complete ? "STAR EARNED!" : "STAR WORD!", font: "AvenirNext-Heavy", size: 32, color: Palette.gold)
+        title.position = CGPoint(x: center.x, y: center.y - 8)
+        title.zPosition = 2
+        title.setScale(0.4)
+        title.alpha = 0
+        splash.addChild(title)
+        title.run(.sequence([.wait(forDuration: 0.15), .group([.scale(to: 1, duration: 0.2), .fadeIn(withDuration: 0.15)])]))
+
+        // The word spells itself out, letter by letter.
+        let letters = Array(word.uppercased()).map(String.init)
+        var fontSize: CGFloat = 36
+        func width(_ text: String) -> CGFloat {
+            let font = UIFont(name: "AvenirNext-Heavy", size: fontSize) ?? .boldSystemFont(ofSize: fontSize)
+            return (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        // Space letters by their real widths, so an I doesn't leave a gap.
+        while width(letters.joined()) > safe.width - 60, fontSize > 16 { fontSize -= 2 }
+        let wordWidth = width(letters.joined())
+        var cursor = center.x - wordWidth / 2
+        for (index, letter) in letters.enumerated() {
+            let glyph = makeLabel(letter, font: "AvenirNext-Heavy", size: fontSize, color: .white)
+            let own = width(letter)
+            glyph.position = CGPoint(x: cursor + own / 2, y: center.y - 54)
+            cursor += own
+            glyph.zPosition = 2
+            glyph.setScale(0)
+            splash.addChild(glyph)
+            glyph.run(.sequence([.wait(forDuration: 0.3 + Double(index) * 0.05),
+                                 .scale(to: 1.3, duration: 0.1), .scale(to: 1, duration: 0.08)]))
+        }
+
+        // "2 OF 4 FOUND" with the balls; the newest pops in.
+        let count = makeLabel(complete ? "ALL \(total) FOUND" : "\(found) OF \(total) FOUND", font: "AvenirNext-Heavy",
+                              size: 16, color: .white)
+        count.position = CGPoint(x: center.x, y: center.y - 98)
+        count.zPosition = 2
+        splash.addChild(count)
+        let balls = makeStarBalls(total: total, filled: found - 1, radius: 10, spacing: 30, empty: SKColor(white: 1, alpha: 0.6))
+        balls.position = CGPoint(x: center.x, y: center.y - 132)
+        balls.zPosition = 2
+        splash.addChild(balls)
+        if let newest = balls.childNode(withName: "star-ball-\(found - 1)") as? SKShapeNode {
+            newest.run(.sequence([
+                .wait(forDuration: 0.6),
+                .run { newest.fillColor = Palette.gold; newest.strokeColor = .white; newest.lineWidth = 2.5 },
+                .scale(to: 1.7, duration: 0.14), .scale(to: 1, duration: 0.18)
+            ]))
+            run(.sequence([.wait(forDuration: 0.6), .run { [weak self] in
+                guard let self else { return }
+                self.emitCelebration(from: balls.convert(newest.position, to: self.overlay), count: 26, in: splash)
+            }]))
+        }
+        emitCelebration(from: star.position, count: complete ? 70 : 40, in: splash)
+        if complete {
+            run(.sequence([.wait(forDuration: 0.3), .run { [weak self] in
+                self?.emitCelebration(from: CGPoint(x: center.x - 120, y: center.y + 40), count: 30, in: splash)
+                self?.emitCelebration(from: CGPoint(x: center.x + 120, y: center.y + 40), count: 30, in: splash)
+            }]))
+        }
+        sound.play(complete ? .levelPassed : .themeWord)
+        haptics.themeWord()
+        run(.sequence([.wait(forDuration: complete ? 2.6 : 2.1), .run { [weak self] in self?.dismissStarSplash() }]),
+            withKey: "star-splash")
+    }
+
+    func dismissStarSplash() {
+        guard isShowingStarSplash else { return }
+        isShowingStarSplash = false
+        removeAction(forKey: "star-splash")
+        lastUpdateTime = 0
+        guard let splash = overlay.childNode(withName: "star-splash") else { return }
+        splash.name = nil
+        splash.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
     }
 }

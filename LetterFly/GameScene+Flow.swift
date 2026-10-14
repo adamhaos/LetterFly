@@ -30,6 +30,11 @@ extension GameScene {
             flashMenuNote("Beat \(Level.countToUnlockNext) \(previous) levels to unlock \(world.title)")
             return
         }
+        // Going into or out of Myth swaps the whole layout, so a rainbow sweeps across to carry it.
+        if (world == .myth) != (selectedWorld == .myth) {
+            switchThroughRainbow(to: world)
+            return
+        }
         selectedWorld = world
         selectedLevel = progress.nextLevel(in: world)
         if !progress.isFreePlayUnlocked(in: world) { isFreePlaySelected = false }
@@ -97,7 +102,17 @@ extension GameScene {
             roundDuration = selectedRoundDuration
         }
         // A round length of 0 means Endless.
-        game.startNewRound(boardSize: board, world: world, endless: mode == .freePlay && roundDuration == 0)
+        // Levels (Myth trials too) put their unfound star words on top.
+        let levelWords = activeLevel.map { $0.wordOrder(found: progress.foundWords(in: $0)) }
+        game.startNewRound(boardSize: board, world: world, endless: mode == .freePlay && roundDuration == 0,
+                           wordSeed: activeLevel?.wordSeed, words: levelWords)
+        trial = activeLevel?.trial.map { MythTrial(kind: $0) }
+        isShowingTrialIntro = trial != nil
+        pendingOutcome = nil
+        earnedRainbow = false
+        mythWasLocked = !progress.isUnlocked(.myth)
+        if trial?.kind == .fates { game.assignThreads() }
+        prepareTrialTurn()
         roundElapsed = 0
         nextEventAt = game.isEndless ? 4 : 7
         exposedSince = [:]
@@ -108,7 +123,9 @@ extension GameScene {
         displayedScore = 0
         isClockUrgent = false
         backgroundLayer?.speed = 1
-        if let level = activeLevel, level.isBoss {
+        if let trial {
+            statusMessage = trial.kind.title
+        } else if let level = activeLevel, level.isBoss {
             statusMessage = "BOSS: \(level.world.bossTwist)"
             statusExpiresAt = 0
         } else if game.isEndless {
@@ -120,6 +137,7 @@ extension GameScene {
         statusExpiresAt = 0
         isAnimatingFeedback = false
         isConfirmingExit = false
+        isShowingStarSplash = false
         hasAnnouncedGoal = false
         layoutSeed = Int.random(in: 0..<1_000_000)
         hiddenInWord = []
@@ -135,6 +153,18 @@ extension GameScene {
         if tutorialStep != nil { statusMessage = "" }
         render()
     }
+
+    /// How many of `level`'s star words have been found over all plays.
+    func collectedThemeWords(in level: Level) -> Int {
+        let found = progress.foundWords(in: level)
+        return level.starWords.filter { found.contains($0.lowercased()) }.count
+    }
+
+    /// The words the theme dots track: a level's star words, or every theme word in Free Play.
+    var starWords: [String] { activeLevel.map(\.starWords) ?? game.roundWords }
+
+    /// Star words spelled this round.
+    var starWordsFoundThisRound: Int { starWords.filter { game.usedWords.contains($0.lowercased()) }.count }
 
     /// The level after `activeLevel`: the next in its world, or the next world's first unbeaten level.
     var levelAfterActive: Level? {
@@ -171,7 +201,7 @@ extension GameScene {
 
     /// Ends a level once its goal is met, without waiting for the clock.
     func finishEarly() {
-        guard screen == .playing, let level = activeLevel, game.score >= level.targetScore else { return }
+        guard screen == .playing, trial == nil, let level = activeLevel, game.score >= level.targetScore else { return }
         finishRound(message: "Finished early")
     }
 
@@ -191,6 +221,8 @@ extension GameScene {
 
     func finishRound(message: String) {
         screen = .finished
+        isShowingStarSplash = false
+        removeAction(forKey: "star-splash")
         statusMessage = message
         lastUpdateTime = 0
         // Calm the backdrop back down if the clock was running low.
@@ -198,14 +230,34 @@ extension GameScene {
         backgroundLayer?.removeAllActions()
         backgroundLayer?.speed = 1
         stats.recordRound(score: game.score, world: game.world)
-        if let level = activeLevel {
-            passedLevel = game.score >= level.targetScore
+        if let level = activeLevel, let trial {
+            passedLevel = trial.isComplete
+            // Trials have star words too, collected across plays like any level.
+            earnedStar = starWordsFoundThisRound == level.starWords.count
+            if collectedThemeWords(in: level) == level.starWords.count {
+                isNewStar = progress.recordStar(for: level) || isNewStar
+            }
+            masteredWorld = isNewStar && progress.isMastered(.myth)
             if passedLevel {
-                earnedStar = game.foundThemeWordCount == game.roundWords.count
-                if earnedStar { isNewStar = progress.recordStar(for: level) }
-                masteredWorld = isNewStar && progress.isMastered(level.world)
+                progress.recordPass(of: level)
+                selectedLevel = levelAfterActive ?? level
+                selectedWorld = .myth
+            }
+            earnedRainbow = progress.awardRainbowIfEarned()
+            sound.play(passedLevel ? .levelPassed : .levelFailed)
+            passedLevel ? haptics.success() : haptics.warning()
+        } else if let level = activeLevel {
+            passedLevel = game.score >= level.targetScore
+            // Theme words carry over between plays: the star comes once all have been found.
+            earnedStar = starWordsFoundThisRound == level.starWords.count
+            if collectedThemeWords(in: level) == level.starWords.count {
+                isNewStar = progress.recordStar(for: level) || isNewStar
+            }
+            masteredWorld = isNewStar && progress.isMastered(level.world)
+            if passedLevel {
                 let freePlayWasLocked = !progress.isFreePlayUnlocked(in: level.world)
                 unlockedWorld = progress.recordPass(of: level)
+                if mythWasLocked && progress.isUnlocked(.myth) { unlockedWorld = .myth }
                 unlockedFreePlay = freePlayWasLocked && progress.isFreePlayUnlocked(in: level.world)
                 selectedLevel = levelAfterActive ?? level
                 selectedWorld = selectedLevel.world

@@ -11,6 +11,7 @@ extension World {
         case .water: "The current sways every letter!"
         case .volcano: "Unused letters burn up in the lava!"
         case .space: "Letters drift in low gravity!"
+        case .myth: ""
         }
     }
 
@@ -22,6 +23,7 @@ extension World {
         case .water: "water.waves"
         case .volcano: "flame.fill"
         case .space: "sparkles"
+        case .myth: "building.columns.fill"
         }
     }
 }
@@ -55,7 +57,13 @@ extension GameScene {
             return
         }
         render()
-        for (index, id) in dropped.enumerated() {
+        animateDrops(dropped)
+    }
+
+    /// Letters just added to the pile fall in from above, one after another.
+    func animateDrops(_ ids: [Int]) {
+        guard !ids.isEmpty else { return }
+        for (index, id) in ids.enumerated() {
             guard let node = nodeNamed("tile-\(id)") else { continue }
             let target = node.position
             node.position.y += size.height * 0.6
@@ -87,6 +95,8 @@ extension GameScene {
             floatLetters(world: world)
         case .volcano:
             updateLava()
+        case .myth:
+            break
         case .storm, .circus, .road:
             guard roundElapsed >= nextEventAt else { return }
             guard !isAnimatingFeedback else { nextEventAt = roundElapsed + 0.3; return }

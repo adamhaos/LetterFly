@@ -11,7 +11,10 @@ extension GameScene {
 
         let title: String
         let titleColor: SKColor
-        if activeLevel != nil {
+        if trial != nil {
+            title = passedLevel ? "TRIAL COMPLETE!" : "THE TRIAL GOES ON"
+            titleColor = passedLevel ? Palette.teal : Palette.coral
+        } else if activeLevel != nil {
             title = passedLevel ? "LEVEL PASSED!" : "SO CLOSE!"
             titleColor = passedLevel ? Palette.teal : Palette.coral
         } else {
@@ -20,27 +23,44 @@ extension GameScene {
         }
         let caption: String
         let captionColor: SKColor
-        if let level = activeLevel {
+        if let trial {
+            caption = trial.kind.title.uppercased()
+            captionColor = passedLevel ? Palette.teal : Palette.muted
+        } else if let level = activeLevel {
             caption = "GOAL \(level.targetScore)"
             captionColor = passedLevel ? Palette.teal : Palette.muted
         } else {
             caption = earnedNewHighScore ? "NEW HIGH SCORE!" : "POINTS"
             captionColor = earnedNewHighScore ? Palette.gold : Palette.muted
         }
-        let themeLine = "\(game.foundThemeWordCount)/\(game.roundWords.count) \(game.world.title.lowercased()) words"
+        let themeFound = activeLevel.map(collectedThemeWords) ?? game.foundThemeWordCount
+        let themeLine = activeLevel != nil ? "\(themeFound)/\(starWords.count) star words"
+            : "\(themeFound)/\(game.roundWords.count) \(game.world.title.lowercased()) words"
         let wordCount = game.usedWords.count == 1 ? "1 word" : "\(game.usedWords.count) words"
-        let summary = "\(wordCount)  •  \(themeLine)  •  best: \(game.longestWord.uppercased())"
+        let summary = trial.map { "\(wordCount)  •  trial \(min($0.progress, $0.kind.goal))/\($0.kind.goal)  •  best: \(game.longestWord.uppercased())" }
+            ?? "\(wordCount)  •  \(themeLine)  •  best: \(game.longestWord.uppercased())"
 
         // Optional lines under the summary.
         var notes: [(text: String, color: SKColor, size: CGFloat, symbol: String?)] = []
-        if let unlockedWorld {
+        if earnedRainbow {
+            notes.append(("RAINBOW SKIN UNLOCKED!", Palette.gold, 15, "sparkles"))
+        }
+        if unlockedWorld == .myth {
+            notes.append(("A SECRET WORLD OPENS: MYTH!", World.myth.accent, 15, "building.columns.fill"))
+        } else if let unlockedWorld {
             notes.append(("\(unlockedWorld.title.uppercased()) UNLOCKED!", unlockedWorld.accent, 15, nil))
         }
         if unlockedFreePlay {
             notes.append(("\(game.world.title.uppercased()) FREE PLAY UNLOCKED!", game.world.accent, 15, nil))
         }
-        if let level = activeLevel, passedLevel, !earnedStar, !progress.hasStar(level), notes.isEmpty {
-            notes.append(("Find all \(game.roundWords.count) \(game.world.title.lowercased()) words to earn a", Palette.muted, 12, "star.fill"))
+        if trial != nil, !progress.hasRainbow, progress.levelsBeaten(in: .myth) >= Level.countPerWorld, notes.isEmpty {
+            let missing = Level.countPerWorld - progress.starCount(in: .myth)
+            notes.append(("Star \(missing) more \(missing == 1 ? "trial" : "trials") to earn the rainbow", Palette.muted, 12, "sparkles"))
+        }
+        if let level = activeLevel, !progress.hasStar(level), notes.isEmpty {
+            let left = level.starWords.count - themeFound
+            let words = left == 1 ? "word" : "words"
+            notes.append(("Find \(left) more star \(words) for a", Palette.muted, 12, "star.fill"))
         }
         if activeLevel == nil {
             let leaders = highScores.scores(for: game.boardSize, duration: roundDuration).prefix(3)
@@ -56,7 +76,8 @@ extension GameScene {
         let scoreHeight: CGFloat = 60
         let captionHeight: CGFloat = 18
         let summaryHeight: CGFloat = 24
-        let starHeight: CGFloat = earnedStar ? 34 : 0
+        let showsStar = earnedStar || isNewStar
+        let starHeight: CGFloat = showsStar ? 34 : 0
         let noteHeight: CGFloat = 24
         let notesHeight = CGFloat(notes.count) * noteHeight
         let primaryHeight: CGFloat = 54
@@ -100,7 +121,7 @@ extension GameScene {
                  at: CGPoint(x: safe.midX, y: next(captionHeight)), alignment: .center, z: 3)
         addLabel(summary, font: "AvenirNext-DemiBold", size: fittedFontSize(for: summary, max: 14, width: panelWidth - 40),
                  color: Palette.muted, at: CGPoint(x: safe.midX, y: next(summaryHeight)), alignment: .center, z: 3)
-        if earnedStar {
+        if showsStar {
             drawStarAward(at: CGPoint(x: safe.midX, y: next(starHeight)))
         }
         for note in notes {
@@ -118,8 +139,15 @@ extension GameScene {
         y -= buttonGap
         let secondaryY = next(secondaryHeight)
         let primarySize = CGSize(width: buttonWidth, height: primaryHeight)
-        if passedLevel, let following = levelAfterActive {
-            let label = following.world == activeLevel?.world ? "NEXT LEVEL" : "ON TO \(following.world.title.uppercased())"
+        if earnedRainbow {
+            // The finale plays on the rainbow road at home.
+            addButton(title: "CLAIM THE RAINBOW", name: "action-home", size: primarySize, color: World.myth.accent,
+                      at: CGPoint(x: safe.midX, y: primaryY), symbol: "sparkles")
+            addSecondaryButton(title: "REPLAY", name: "action-again", size: CGSize(width: buttonWidth, height: secondaryHeight),
+                               at: CGPoint(x: safe.midX, y: secondaryY), symbol: "arrow.counterclockwise")
+        } else if passedLevel, let following = levelAfterActive {
+            let label = trial != nil ? "NEXT TRIAL"
+                : (following.world == activeLevel?.world ? "NEXT LEVEL" : "ON TO \(following.world.title.uppercased())")
             addButton(title: label, name: "action-next", size: primarySize, color: Palette.coral,
                       at: CGPoint(x: safe.midX, y: primaryY))
             let half = CGSize(width: (buttonWidth - 12) / 2, height: secondaryHeight)

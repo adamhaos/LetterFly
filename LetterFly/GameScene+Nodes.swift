@@ -17,8 +17,7 @@ extension GameScene {
         // Deeper letters are smaller and fainter, so they read as further back.
         let coveredAlphas: [CGFloat] = [0.38, 0.18]
         let alpha = exposed ? 1 : coveredAlphas[min(max(depth - 1, 0), coveredAlphas.count - 1)]
-        let base: SKColor = tile.isWild ? Palette.gold : (tile.isBonus ? Palette.bonusLetter : .white)
-        let color = base.withAlphaComponent(alpha)
+        let color = letterColor(for: tile).withAlphaComponent(alpha)
         let fontSize = side * (exposed ? 0.9 : 0.78 - 0.12 * CGFloat(depth - 1))
         if exposed {
             let shadow = makeLabel(String(tile.shown), font: "AvenirNext-Heavy", size: fontSize,
@@ -38,6 +37,11 @@ extension GameScene {
             container.addChild(badge)
             // A gentle shimmer so the wild letter stands out.
             letter.run(.repeatForever(.sequence([.fadeAlpha(to: 0.6, duration: 0.7), .fadeAlpha(to: 1, duration: 0.7)])))
+        }
+        if exposed && tile.isGold {
+            // Midas's gold glints.
+            letter.run(.repeatForever(.sequence([.colorize(with: .white, colorBlendFactor: 0, duration: 0),
+                                                 .fadeAlpha(to: 0.75, duration: 0.6), .fadeAlpha(to: 1, duration: 0.6)])))
         }
         if exposed && tile.isBonus {
             let badge = makeLabel("2×", font: "AvenirNext-Heavy", size: max(9, side * 0.18), color: Palette.gold, name: name)
@@ -73,8 +77,8 @@ extension GameScene {
         star.zPosition = 4
         addChild(star)
         let text = masteredWorld
-            ? "ALL 5 STARS — \(game.world.title.uppercased()) MASTERED!"
-            : (isNewStar ? "STAR EARNED — ALL THEME WORDS!" : "ALL THEME WORDS FOUND!")
+            ? "ALL \(Level.countPerWorld) STARS — \(game.world.title.uppercased()) MASTERED!"
+            : (isNewStar ? "STAR EARNED — ALL THEME WORDS!" : "ALL THEME WORDS IN ONE ROUND!")
         addLabel(text, font: "AvenirNext-Heavy", size: 12, color: Palette.mix(Palette.gold, Palette.ink, 0.25),
                  at: CGPoint(x: point.x + 16, y: point.y), alignment: .center, z: 4)
         star.setScale(0)
@@ -246,9 +250,10 @@ extension GameScene {
         let body = SKNode()
         body.name = "bug-body"
         logo.addChild(body)
-        // A light rim on the dark parts, so the bug reads against any background.
-        let rim = SKColor(red: 0.96, green: 0.92, blue: 0.84, alpha: 0.5)
-        let rimWidth = max(1, 0.016 * s)
+        // A bright cream rim on the dark parts, so the bug's outline stands out against dark
+        // skies and the dark app icon.
+        let rim = SKColor(red: 0.98, green: 0.94, blue: 0.86, alpha: 0.9)
+        let rimWidth = max(1.5, 0.024 * s)
         // The view ignores sibling order, so each part gets an explicit, increasing z.
         var depth: CGFloat = 0
         func add(_ node: SKNode, to parent: SKNode? = nil) {
@@ -267,10 +272,14 @@ extension GameScene {
             add(halo)
         }
 
-        // Speed streaks trailing behind.
+        // Speed streaks trailing behind (a rainbow trail with the rainbow skin).
         for (index, offset) in [(-0.42, -0.10), (-0.36, -0.24)].enumerated() {
             let streak = SKShapeNode(rectOf: CGSize(width: 0.26 * s, height: 0.035 * s), cornerRadius: 0.0175 * s)
             streak.fillColor = teal
+            if outfit == .rainbow {
+                streak.fillColor = .white
+                streak.fillShader = Self.rainbowShader(brightness: 1)
+            }
             streak.strokeColor = .clear
             streak.position = CGPoint(x: offset.0 * s, y: offset.1 * s)
             streak.zRotation = 0.5
@@ -335,6 +344,10 @@ extension GameScene {
             pivot.position = CGPoint(x: 0.0, y: 0.06 * s)
             add(pivot)
             let wing = ellipse(spec.0, spec.1, index == 0 ? redDark : red, at: spec.2, spec.3)
+            if outfit == .rainbow {
+                wing.fillColor = .white
+                wing.fillShader = Self.rainbowShader(brightness: index == 0 ? 0.72 : 1)
+            }
             wing.zRotation = spec.4
             // The front case gets the light rim; the back one keeps a dark edge for depth.
             wing.strokeColor = index == 0 ? redDark : rim
@@ -367,10 +380,17 @@ extension GameScene {
             let path = CGMutablePath()
             path.move(to: CGPoint(x: 0, y: 0.14 * s))
             path.addQuadCurve(to: CGPoint(x: end.0 * s, y: end.1 * s), control: CGPoint(x: control.0 * s, y: control.1 * s))
+            // A rim-colored stroke underneath outlines the thin stalk.
+            let outline = SKShapeNode(path: path)
+            outline.strokeColor = rim
+            outline.lineWidth = 0.025 * s + rimWidth * 1.4
+            outline.lineCap = .round
+            antennae.addChild(outline)
             let stalk = SKShapeNode(path: path)
             stalk.strokeColor = navy
             stalk.lineWidth = 0.025 * s
             stalk.lineCap = .round
+            stalk.zPosition = 0.05
             antennae.addChild(stalk)
             let tip = SKShapeNode(circleOfRadius: 0.04 * s)
             tip.fillColor = gold
@@ -446,7 +466,7 @@ extension GameScene {
         tile.position = CGPoint(x: 0, y: -0.15 * s)
         tile.zPosition = 0.05
         tilePivot.addChild(tile)
-        let letter = makeLabel("L", font: "AvenirNext-Heavy", size: 0.24 * s, color: navy)
+        let letter = makeCenteredLabel("Y", font: "AvenirNext-Heavy", size: 0.24 * s, color: navy)
         letter.name = "bug-letter"
         letter.zPosition = 0.1
         tile.addChild(letter)
@@ -465,6 +485,24 @@ extension GameScene {
         oscillate(body, period: 1.6) { node, wave in node.position.y = 0.025 * s * wave }
         oscillate(body, period: 2.2, key: "bug-sway") { node, wave in node.zRotation = 0.005 + 0.035 * wave }
         return logo
+    }
+
+    /// A shimmering rainbow that slides slowly across a shape, for the rainbow skin.
+    static func rainbowShader(brightness: Float) -> SKShader {
+        let key = Int(brightness * 100)
+        if let cached = rainbowShaders[key] { return cached }
+        let shader = SKShader(source: """
+        void main() {
+            vec2 uv = v_tex_coord;
+            float hue = fract(uv.x * 0.85 + uv.y * 0.35 - u_time * 0.12);
+            vec3 rgb = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+            rgb = mix(rgb, vec3(1.0), 0.18) * u_brightness;
+            gl_FragColor = vec4(rgb, 1.0) * v_color_mix.a;
+        }
+        """)
+        shader.uniforms = [SKUniform(name: "u_brightness", float: brightness)]
+        rainbowShaders[key] = shader
+        return shader
     }
 
     /// Turns the ladybug to face left or right with a quick, smooth flip. The letter it
@@ -507,7 +545,8 @@ extension GameScene {
         }
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
         switch outfit {
-        case .none:
+        case .none, .rainbow:
+            // The rainbow is a skin, painted on the wing cases rather than worn.
             break
         case .rainHat:
             let yellow = SKColor(red: 0.99, green: 0.80, blue: 0.20, alpha: 1)
@@ -764,18 +803,18 @@ extension GameScene {
         let theme = menuTheme
         let button = roundedRect(size: size, radius: 14,
                                  fill: selected ? theme.accent : theme.chip,
-                                 stroke: selected ? theme.accent : Palette.ink.withAlphaComponent(0.14))
+                                 stroke: selected ? theme.accent : theme.line.withAlphaComponent(0.14))
         button.position = point
         button.name = name
         button.zPosition = 5
         addChild(button)
         let titleParts: [InlinePart] = titleSymbol.map { [.symbol($0)] } ?? [.text(title)]
         let titleLabel = makeInlineRow(titleParts, font: "AvenirNext-Heavy", size: size.height < 50 ? 14 : 16,
-                                       color: selected ? .white : Palette.ink, name: name)
+                                       color: selected ? .white : theme.text, name: name)
         titleLabel.position.y = size.height * 0.15
         button.addChild(titleLabel)
         let subtitleLabel = makeLabel(subtitle, font: "AvenirNext-Medium", size: 9,
-                                      color: selected ? .white.withAlphaComponent(0.80) : Palette.muted, name: name)
+                                      color: selected ? .white.withAlphaComponent(0.80) : theme.subtext, name: name)
         subtitleLabel.position.y = -size.height * 0.22
         button.addChild(subtitleLabel)
         if selected {

@@ -81,6 +81,10 @@ final class SoundPlayer {
         case .space:
             // A laser pew: a zippy falling blip.
             [Tone(note: 90 + step, start: 0, duration: 0.09, volume: 0.10, wave: .square, glide: -16)]
+        case .myth:
+            // A lyre pluck: a bright triangle with a soft octave shimmer.
+            [Tone(note: 69 + step, start: 0, duration: 0.16, volume: 0.18, wave: .triangle),
+             Tone(note: 81 + step, start: 0, duration: 0.10, volume: 0.05, wave: .sine)]
         }
     }
 

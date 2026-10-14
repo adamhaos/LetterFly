@@ -3,7 +3,7 @@ import UIKit
 
 // Popup screens over the home screen: settings, stats with the outfit picker, and reset.
 extension GameScene {
-    static func isOverlayAction(_ name: String) -> Bool {
+    nonisolated static func isOverlayAction(_ name: String) -> Bool {
         ["action-overlay-", "action-setting-", "action-outfit-", "action-reset-"].contains { name.hasPrefix($0) }
     }
 
@@ -176,10 +176,13 @@ extension GameScene {
 
     func resetAllProgress() {
         let defaults = UserDefaults.standard
-        let prefixes = ["progress.", "stars.", "highScores.", "stats.", "outfit.", "tutorial.", "seenUnlock."]
+        // The rainbow skin is kept for good (its key isn't listed), and stays on if it was being worn.
+        let wasWearingRainbow = Outfit.selected == .rainbow
+        let prefixes = ["progress.", "stars.", "found.", "highScores.", "stats.", "outfit.", "tutorial.", "seenUnlock.", "myth."]
         for key in defaults.dictionaryRepresentation().keys where prefixes.contains(where: key.hasPrefix) {
             defaults.removeObject(forKey: key)
         }
+        if wasWearingRainbow { Outfit.selected = .rainbow }
         selectedWorld = .storm
         selectedLevel = progress.nextLevel(in: .storm)
         isFreePlaySelected = false
@@ -196,14 +199,15 @@ extension GameScene {
         let width = min(390, safeFrame.width - 28)
         let inner = width - 32
         // Header, stat grid, world scores and outfit row, top to bottom.
-        let slotGuess = inner / CGFloat(Outfit.allCases.count)
+        let outfits = Outfit.shown(progress)
+        let slotGuess = inner / CGFloat(outfits.count)
         let height = min(66 + 120 + 22 + 22 + 78 + 12 + 44 + slotGuess / 2 + 34, safeFrame.height - 24)
         let card = drawOverlayCard(title: "STATS", width: width, height: height)
         var y = height / 2 - 66
 
         // Headline numbers in a 3×2 grid.
-        let totalLevels = World.allCases.count * Level.countPerWorld
-        let stars = World.allCases.map(progress.starCount).reduce(0, +)
+        let totalLevels = World.main.count * Level.countPerWorld
+        let stars = World.main.map(progress.starCount).reduce(0, +)
         let top = stats.mostUsedLetter
         let tiles: [(String, String)] = [
             ("WORDS", "\(stats.totalWords)"),
@@ -241,7 +245,7 @@ extension GameScene {
         heading.zPosition = 1
         card.addChild(heading)
         y -= 22
-        for world in World.allCases {
+        for world in World.main {
             let column = CGFloat(world.rawValue % 2)
             let row = CGFloat(world.rawValue / 2)
             let x = -inner / 2 + column * (inner / 2 + 8)
@@ -270,13 +274,13 @@ extension GameScene {
         outfitHeading.zPosition = 1
         card.addChild(outfitHeading)
         y -= 44
-        let slot = inner / CGFloat(Outfit.allCases.count)
-        for outfit in Outfit.allCases {
+        let slot = inner / CGFloat(outfits.count)
+        for (index, outfit) in outfits.enumerated() {
             let name = "action-outfit-\(outfit.rawValue)"
             let unlocked = outfit.isUnlocked(progress)
             let worn = Outfit.selected.isUnlocked(progress) ? Outfit.selected : .none
             let selected = outfit == worn
-            let x = -inner / 2 + slot * (CGFloat(outfit.rawValue) + 0.5)
+            let x = -inner / 2 + slot * (CGFloat(index) + 0.5)
             let ring = SKShapeNode(circleOfRadius: slot / 2 - 2)
             ring.fillColor = selected ? theme.accent.withAlphaComponent(0.18) : theme.chip
             ring.strokeColor = selected ? theme.deepAccent : .clear

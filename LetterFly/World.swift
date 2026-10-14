@@ -4,6 +4,11 @@ import Foundation
 /// and spelling one of them scores as a theme bonus.
 enum World: Int, CaseIterable {
     case storm, circus, road, water, volcano, space
+    /// The secret world, opened by starring every level of the six main worlds.
+    case myth
+
+    /// The six worlds of the regular playthrough, in order.
+    static let main: [World] = [.storm, .circus, .road, .water, .volcano, .space]
 
     var title: String {
         switch self {
@@ -13,15 +18,28 @@ enum World: Int, CaseIterable {
         case .water: "Water"
         case .volcano: "Volcano"
         case .space: "Space"
+        case .myth: "Myth"
         }
     }
 
-    var previous: World? { World(rawValue: rawValue - 1) }
-    var next: World? { World(rawValue: rawValue + 1) }
+    /// The playthrough chain runs Storm to Space; Myth sits outside it.
+    var previous: World? { self == .myth ? nil : World(rawValue: rawValue - 1) }
+    var next: World? { self == .myth || self == .space ? nil : World(rawValue: rawValue + 1) }
 
     func words(ofLength length: Int) -> [String] {
-        length == 6 ? sixLetterWords : eightLetterWords
+        if self == .myth { return Self.mythWords }
+        return length == 6 ? sixLetterWords : eightLetterWords
     }
+
+    /// Myth boards are built from five-letter words: gods, monsters, heroes and their things.
+    static let mythWords = [
+        "HYDRA", "TITAN", "ATLAS", "HADES", "CHAOS", "MIDAS", "NYMPH", "SATYR", "SIREN", "MUSES",
+        "FATES", "HARPY", "CIRCE", "MEDEA", "PARIS", "HELEN", "CUPID", "VENUS", "PLUTO", "FREYA",
+        "TROLL", "GIANT", "DWARF", "ELVES", "RUNES", "MYTHS", "DEITY", "SPEAR", "SWORD", "TORCH",
+        "FLAME", "WINGS", "STONE", "CROWN", "QUEST", "MAGIC", "SPELL", "CURSE", "OMENS", "FABLE",
+        "SAGAS", "ALTAR", "OLIVE", "FEAST", "ARROW", "ARMOR", "BEAST", "OGRES", "PIXIE", "FAIRY",
+        "GENIE", "GHOST", "GLORY", "HONOR", "VALOR", "LYRES", "SNAKE", "TALES",
+    ]
 
     private var eightLetterWords: [String] {
         switch self {
@@ -43,6 +61,7 @@ enum World: Int, CaseIterable {
         case .space:
             ["STARSHIP", "ASTEROID", "MOONWALK", "SPACEMAN", "LAUNCHED", "ORBITERS", "STARDUST",
              "MOONBEAM", "SUNSPOTS", "ECLIPSES", "UNIVERSE", "BLASTOFF"]
+        case .myth: []
         }
     }
 
@@ -66,6 +85,7 @@ enum World: Int, CaseIterable {
         case .space:
             ["PLANET", "ROCKET", "COMETS", "GALAXY", "ORBITS", "METEOR", "SATURN", "ALIENS",
              "COSMOS", "STARRY", "NEBULA"]
+        case .myth: []
         }
     }
 }
