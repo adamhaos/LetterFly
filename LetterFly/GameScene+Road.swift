@@ -152,7 +152,8 @@ extension GameScene {
         run(.sequence([.wait(forDuration: 0.32), .run { [weak self] in
             guard let self else { return }
             self.selectedWorld = world
-            self.selectedLevel = self.progress.nextLevel(in: world)
+            self.selectedLevel = self.isTutorialReplayPending && world == .storm
+                ? Level(world: .storm, number: 1) : self.progress.nextLevel(in: world)
             if !self.progress.isFreePlayUnlocked(in: world) { self.isFreePlaySelected = false }
             self.mythIntroPending = entering
             self.mythBugStop = nil

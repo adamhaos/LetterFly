@@ -301,6 +301,7 @@ extension GameScene {
         isShowingStarSplash = false
         removeAction(forKey: "star-splash")
         lastUpdateTime = 0
+        revealTutorialAfterSplash()
         guard let splash = overlay.childNode(withName: "star-splash") else { return }
         splash.name = nil
         splash.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))

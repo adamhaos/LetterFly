@@ -11,6 +11,7 @@ extension GameScene {
             return
         }
         isFreePlaySelected = true
+        isTutorialReplayPending = false
         haptics.select()
         render()
     }
@@ -30,6 +31,7 @@ extension GameScene {
             flashMenuNote("Beat \(Level.countToUnlockNext) \(previous) levels to unlock \(world.title)")
             return
         }
+        isTutorialReplayPending = false
         // Going into or out of Myth swaps the whole layout, so a rainbow sweeps across to carry it.
         if (world == .myth) != (selectedWorld == .myth) {
             switchThroughRainbow(to: world)
@@ -51,8 +53,24 @@ extension GameScene {
         }
         selectedLevel = level
         isFreePlaySelected = false
+        isTutorialReplayPending = false
         haptics.select()
         render()
+    }
+
+    /// Replaying the tutorial heads straight to Storm level 1, whose button then reads
+    /// PLAY TUTORIAL until the player picks something else.
+    func goToTutorialLevel() {
+        isTutorialReplayPending = true
+        isFreePlaySelected = false
+        if selectedWorld == .myth {
+            switchThroughRainbow(to: .storm)
+        } else {
+            selectedWorld = .storm
+            selectedLevel = Level(world: .storm, number: 1)
+            render()
+        }
+        flashMenuNote("The tutorial is ready on Storm level 1")
     }
 
     func chooseBoard(_ boardSize: LetterFlyGame.BoardSize) {
@@ -149,8 +167,8 @@ extension GameScene {
         isNewStar = false
         masteredWorld = false
         unlockedFreePlay = false
-        tutorialStep = shouldRunTutorial ? .tapLetter : nil
-        if tutorialStep != nil { statusMessage = "" }
+        isTutorialReplayPending = false
+        prepareTutorial()
         render()
     }
 
@@ -193,6 +211,8 @@ extension GameScene {
 
     func showMenu() {
         screen = .menu
+        // Leaving mid-tutorial drops any tip; the tutorial replays unless its tour was finished.
+        endCoaching()
         lastUpdateTime = 0
         isConfirmingExit = false
         if !progress.isPlayable(selectedLevel) { selectedLevel = progress.nextLevel(in: selectedWorld) }
@@ -221,6 +241,7 @@ extension GameScene {
 
     func finishRound(message: String) {
         screen = .finished
+        endCoaching()
         isShowingStarSplash = false
         removeAction(forKey: "star-splash")
         statusMessage = message

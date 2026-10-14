@@ -30,8 +30,7 @@ extension GameScene {
         case "action-setting-tutorial":
             UserDefaults.standard.set(false, forKey: Self.tutorialKey)
             menuOverlay = nil
-            render()
-            flashMenuNote("The tutorial will play on Storm level 1")
+            goToTutorialLevel()
         case "action-setting-reset":
             setOverlay(.confirmReset)
         case "action-reset-confirm":

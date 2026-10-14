@@ -22,7 +22,9 @@ extension GameScene {
             case .settings: drawSettings()
             case .stats: drawStats()
             case .confirmReset: drawConfirmReset()
-            case nil: break
+            case nil:
+                startHomeTourIfPending()
+                drawHomeTour()
             }
         case .playing:
             drawGame()
@@ -172,6 +174,7 @@ extension GameScene {
     var showingFreePlay: Bool { isFreePlaySelected && progress.isFreePlayUnlocked(in: selectedWorld) }
     var playButtonTitle: String {
         if showingFreePlay { return selectedRoundDuration == 0 ? "START ENDLESS" : "START FREE PLAY" }
+        if isTutorialReplayPending && selectedLevel == Level(world: .storm, number: 1) { return "PLAY TUTORIAL" }
         return selectedLevel.isBoss ? "PLAY BOSS LEVEL" : "PLAY LEVEL \(selectedLevel.number)"
     }
     var playButtonAction: String { showingFreePlay ? "action-free-play" : "action-play" }
@@ -196,6 +199,7 @@ extension GameScene {
         addLabel(selectedWorld.title.uppercased(), font: "AvenirNext-Heavy", size: 11, color: theme.deepAccent,
                  at: CGPoint(x: center.x + width / 2 - 18, y: top - 24), alignment: .right, z: 4)
         drawWorldChoices(centerX: center.x, y: top - 72, width: inner)
+        addMarker("menu-worlds", frame: CGRect(x: center.x - inner / 2, y: top - 104, width: inner, height: 64))
 
         drawLevelChoices(centerX: center.x, top: top - 112, left: left, width: inner)
     }
@@ -512,6 +516,7 @@ extension GameScene {
         let slots = CGFloat(Level.countPerWorld + 1)
         let spacing = min(56, width / slots)
         let rowY = top - 52
+        addMarker("menu-levels", frame: CGRect(x: centerX - spacing * slots / 2, y: rowY - 22, width: spacing * slots, height: 44))
         let freeX = centerX + (slots - (slots + 1) / 2) * spacing
         let freeOpen = progress.isFreePlayUnlocked(in: level.world)
         let freeChip = roundedRect(size: CGSize(width: 44, height: 40), radius: 14,
@@ -612,6 +617,7 @@ extension GameScene {
             node.zPosition = 4
             addChild(node)
         }
+        addMarker("menu-stars", frame: CGRect(x: centerX - width / 2, y: y - 9, width: width, height: 18))
     }
 
     func drawBoardChoices(centerX: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {

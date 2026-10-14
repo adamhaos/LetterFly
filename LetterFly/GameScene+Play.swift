@@ -17,7 +17,7 @@ extension GameScene {
         sound.playSelect(letterIndex: game.selectedTileIDs.count - 1, world: game.world)
         if game.selectedTiles.last?.isBonus == true { haptics.bonusLetter() } else { haptics.select() }
         hiddenInWord.insert(id)
-        if tutorialStep == .tapLetter { tutorialStep = .spellAndSubmit }
+        coachIdle = 0
         render()
         if let start, let tile = game.selectedTiles.last,
            let end = wordLetterPosition(at: game.selectedTileIDs.count - 1) {
@@ -193,7 +193,7 @@ extension GameScene {
         let playedTiles = game.selectedTiles
         let playedLanes = game.lanes(of: game.selectedTileIDs)
         let result = game.commitSelection(as: word)
-        if tutorialStep == .spellAndSubmit { tutorialStep = .goalBar }
+        if tutorialStep == .spellStar { showNextCoachStep() }
         statusMessage = result.isThemeWord
             ? "\(game.world.title.uppercased()) WORD! +\(result.points)"
             : "+\(result.points)  \(word.uppercased())"
@@ -217,6 +217,7 @@ extension GameScene {
     }
 
     func rejectWord(_ message: String) {
+        coach([.fixMistakes])
         showStatus(message, color: Palette.coral)
         sound.play(.reject)
         haptics.error()
@@ -231,6 +232,7 @@ extension GameScene {
             finishTrialTurn()
             return
         }
+        coachAfterWord()
         if game.isEndless, game.remainingTileCount < 6 || game.prepareNextMove() == .none {
             // Endless never runs dry: refill instead of ending.
             countUpScore()

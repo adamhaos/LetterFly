@@ -49,6 +49,7 @@ extension GameScene {
             let track = roundedRect(size: CGSize(width: trackWidth, height: 8), radius: 4, fill: world.glass, stroke: Self.glassEdge)
             track.position = center
             track.zPosition = 2
+            track.name = "goal-bar"
             addChild(track)
             let fraction = CGFloat(game.score) / CGFloat(level.targetScore)
             if fraction > 0 {
@@ -105,7 +106,7 @@ extension GameScene {
             addSmallStat(title: "TRIAL", value: "\(min(trial.progress, trial.kind.goal))/\(trial.kind.goal)",
                          x: rect.maxX - 120, y: rect.midY, valueColor: Self.glassSubtext, titleColor: Self.glassSubtext)
         } else if let level = activeLevel {
-            addSmallStat(title: "GOAL", value: "\(level.targetScore)", x: rect.maxX - 120, y: rect.midY,
+            addSmallStat(title: "GOAL", value: "\(level.targetScore)", x: rect.maxX - 120, y: rect.midY, name: "goal-label",
                          valueColor: Self.glassSubtext, titleColor: Self.glassSubtext)
         } else if game.isEndless {
             addSmallStat(title: "PILE", value: pileText, x: rect.maxX - 120, y: rect.midY, name: "pile-label",
@@ -299,6 +300,7 @@ extension GameScene {
     /// above it, deeper ones fainter. Stacks are scattered freely rather than gridded.
     func drawPile(in area: CGRect) {
         pileArea = area
+        addMarker("pile-area", frame: area)
         // Bigger boards show fewer covered letters so the screen stays readable.
         let covered = min(game.stacks.count > 8 ? 1 : 2, game.boardSize.layerCount - 1)
         let layout = pileLayout(count: game.stacks.count, in: area, covered: covered)
@@ -395,6 +397,14 @@ extension GameScene {
         hasher.combine(key)
         hasher.combine(salt)
         return CGFloat(UInt(bitPattern: hasher.finalize()) % 10_000) / 10_000
+    }
+
+    /// An invisible node covering `frame`, for the tutorial to spotlight.
+    func addMarker(_ name: String, frame: CGRect) {
+        let marker = SKSpriteNode(color: .clear, size: frame.size)
+        marker.position = CGPoint(x: frame.midX, y: frame.midY)
+        marker.name = name
+        addChild(marker)
     }
 
     func drawControls(in area: CGRect) {

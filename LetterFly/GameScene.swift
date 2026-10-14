@@ -126,8 +126,28 @@ final class GameScene: SKScene {
     enum MenuOverlay { case rules, settings, stats, confirmReset }
     var menuOverlay: MenuOverlay?
     static let tutorialKey = "tutorial.done"
-    /// The current tutorial step, or nil when no tutorial is running.
+    /// The tip on screen, or nil when the bug isn't talking. The clock waits while one shows.
     var tutorialStep: TutorialStep?
+    /// Tips waiting to show after the current one, and every tip shown this round.
+    var coachQueue: [TutorialStep] = []
+    var coachShown: Set<TutorialStep> = []
+    /// True for the whole tutorial round, not just while a tip is showing.
+    var isCoachingRound = false
+    /// The word the tutorial walks the player through spelling, and whether it's a new star word.
+    var tutorialWord: String?
+    var tutorialWordIsNewStar = false
+    /// The top layer's tiles when the round began, which spell the tutorial word.
+    var tutorialTileIDs: Set<Int> = []
+    var tutorialShownAt: TimeInterval = 0
+    /// Seconds without a letter picked, for the "stuck?" tip; and the player's own words so far.
+    var coachIdle: TimeInterval = 0
+    var coachWords = 0
+    /// The home-screen tour's current stop, or nil when it isn't showing.
+    var homeTourStep: HomeTourStep?
+    /// Where the home bug sits during the tour, so each stop flies on from the last.
+    var homeTourBugSpot: CGPoint?
+    /// Set by Replay Tutorial, so Storm level 1's button reads PLAY TUTORIAL.
+    var isTutorialReplayPending = false
     /// Where the goal bar was last drawn, so the tutorial can point at it.
     var goalBarCenter: CGPoint?
     var hasAnnouncedGoal = false
@@ -235,6 +255,8 @@ final class GameScene: SKScene {
         let delta = lastUpdateTime > 0 ? min(currentTime - lastUpdateTime, 0.25) : 0
         lastUpdateTime = currentTime
         roundElapsed += delta
+        updateCoaching(delta: delta)
+        guard tutorialStep == nil else { return }
         updateTwists()
         guard screen == .playing else { return }
         if game.isEndless {
@@ -324,9 +346,20 @@ final class GameScene: SKScene {
             else if names.contains("action-resume") || !names.contains("exit-card") { dismissExitConfirmation() }
             return
         }
-        if tutorialStep != nil && screen == .playing && !isConfirmingExit && tutorialWaitsForTap {
-            advanceTutorial()
+        if screen == .menu, homeTourStep != nil, menuOverlay == nil {
+            advanceHomeTour()
             return
+        }
+        if screen == .playing && !isConfirmingExit {
+            // Any tap moves a tip along, except the pause button, which still pauses.
+            if tutorialWaitsForTap && !names.contains("action-exit") {
+                advanceTutorial()
+                return
+            }
+            guard tutorialAllowsTap(on: names) else {
+                haptics.error()
+                return
+            }
         }
         if let overlay = menuOverlay {
             // The close button, or any tap outside the card, dismisses the popup.
@@ -392,7 +425,8 @@ final class GameScene: SKScene {
 
     /// Shuffles the uncovered letters, flying each one to its new spot.
     func shuffleAvailableTiles() {
-        guard screen == .playing, !isConfirmingExit else { return }
+        // Shaking the phone lands here too, so it mustn't scramble letters mid-tutorial.
+        guard screen == .playing, !isConfirmingExit, tutorialStep == nil else { return }
         // Remember where every uncovered letter sits before they swap.
         var starts: [Int: (CGPoint, CGFloat)] = [:]
         for id in game.exposedTileIDs.compactMap({ $0 }) {
