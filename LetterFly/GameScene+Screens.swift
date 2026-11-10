@@ -4,7 +4,7 @@ import UIKit
 // Popup screens over the home screen: settings, stats with the outfit picker, and reset.
 extension GameScene {
     nonisolated static func isOverlayAction(_ name: String) -> Bool {
-        ["action-overlay-", "action-setting-", "action-outfit-", "action-reset-"].contains { name.hasPrefix($0) }
+        ["action-overlay-", "action-setting-", "action-outfit-", "action-reset-", "action-daily-"].contains { name.hasPrefix($0) }
     }
 
     func setOverlay(_ overlay: MenuOverlay?) {
@@ -35,6 +35,10 @@ extension GameScene {
             setOverlay(.confirmReset)
         case "action-reset-confirm":
             resetAllProgress()
+        case "action-daily-play":
+            startDailyPuzzle()
+        case "action-daily-leaderboard":
+            openGameCenter(.daily)
         default:
             if let index = Self.number(in: action, after: "action-outfit-"), let outfit = Outfit(rawValue: index) {
                 guard outfit.isUnlocked(progress) else {

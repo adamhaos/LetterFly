@@ -17,6 +17,9 @@ extension GameScene {
         } else if activeLevel != nil {
             title = passedLevel ? "LEVEL PASSED!" : "SO CLOSE!"
             titleColor = passedLevel ? Palette.teal : Palette.coral
+        } else if mode == .daily {
+            title = "DAILY DONE!"
+            titleColor = Palette.teal
         } else {
             title = statusMessage.uppercased()
             titleColor = Palette.ink
@@ -29,6 +32,9 @@ extension GameScene {
         } else if let level = activeLevel {
             caption = "GOAL \(level.targetScore)"
             captionColor = passedLevel ? Palette.teal : Palette.muted
+        } else if mode == .daily {
+            caption = earnedNewHighScore ? "NEW DAILY BEST!" : "DAILY SCORE"
+            captionColor = earnedNewHighScore ? Palette.gold : Palette.muted
         } else {
             caption = earnedNewHighScore ? "NEW HIGH SCORE!" : "POINTS"
             captionColor = earnedNewHighScore ? Palette.gold : Palette.muted
@@ -62,7 +68,11 @@ extension GameScene {
             let words = left == 1 ? "word" : "words"
             notes.append(("Find \(left) more star \(words) for a", Palette.muted, 12, "star.fill"))
         }
-        if activeLevel == nil {
+        if mode == .daily, let puzzle = dailyPuzzle {
+            let streak = daily.currentStreak(on: puzzle)
+            notes.append(("\(streak)-DAY STREAK", Palette.coral, 15, "flame.fill"))
+            notes.append(("Next puzzle in \(timeUntilNextPuzzle(after: puzzle))", Palette.muted, 12, nil))
+        } else if activeLevel == nil {
             let leaders = highScores.scores(for: game.boardSize, duration: roundDuration).prefix(3)
                 .map(String.init).joined(separator: "  •  ")
             notes.append(("TOP  \(leaders.isEmpty ? "—" : leaders)", Palette.teal, 11, nil))
@@ -72,7 +82,7 @@ extension GameScene {
         let padding: CGFloat = 22
         let mascotHeight: CGFloat = 84
         let titleHeight: CGFloat = 34
-        let subtitleHeight: CGFloat = activeLevel != nil ? 20 : 0
+        let subtitleHeight: CGFloat = activeLevel != nil || mode == .daily ? 20 : 0
         let scoreHeight: CGFloat = 60
         let captionHeight: CGFloat = 18
         let summaryHeight: CGFloat = 24
@@ -139,7 +149,13 @@ extension GameScene {
         y -= buttonGap
         let secondaryY = next(secondaryHeight)
         let primarySize = CGSize(width: buttonWidth, height: primaryHeight)
-        if earnedRainbow {
+        if mode == .daily {
+            // One try a day, so no replay: the leaderboard instead.
+            addButton(title: "LEADERBOARD", name: "action-leaderboard-daily", size: primarySize, color: Palette.teal,
+                      at: CGPoint(x: safe.midX, y: primaryY), symbol: "trophy.fill")
+            addSecondaryButton(title: "HOME", name: "action-home", size: CGSize(width: buttonWidth, height: secondaryHeight),
+                               at: CGPoint(x: safe.midX, y: secondaryY))
+        } else if earnedRainbow {
             // The finale plays on the rainbow road at home.
             addButton(title: "CLAIM THE RAINBOW", name: "action-home", size: primarySize, color: World.myth.accent,
                       at: CGPoint(x: safe.midX, y: primaryY), symbol: "sparkles")

@@ -103,6 +103,18 @@ Six main worlds in order: **Storm → Circus → Road → Water → Volcano → 
 - **Settings:** sound, haptics, outfit picker, replay tutorial, reset progress (with a confirmation step).
 - **Rules card**, plus world unlock bursts on the menu.
 
+### Daily puzzle (`DailyPuzzle.swift`, `GameScene+Daily.swift`)
+- One puzzle a day, dealt the same on every device: a 4×3 pile on a 180 s clock, with the worlds taking turns. The words, deal, red letters and wild come from seeds based on the day (`LetterFlyGame.startNewRound(dealSeed:)`); Mix and the anti-stall remix stay random.
+- A new puzzle opens at **08:00 UTC** (`DailyPuzzle.resetHourUTC`), which is overnight across the US. The Game Center daily leaderboard must restart at the same hour.
+- **One try a day:** starting the puzzle uses the try, restart is greyed out, and leaving early saves the score so far. A progress reset doesn't clear daily data.
+- The calendar button on the home screen (with a dot while today's puzzle is unplayed) opens the daily card: the day's world and date, streak, best streak, best score, today's result, a countdown to the next puzzle, and a leaderboard button.
+
+### Game Center (`GameCenter.swift`, `GameCenterGoals.swift`)
+- Optional sign-in at launch (`GameViewController.viewDidAppear`). When signed out, nothing changes.
+- Leaderboards: `letterfly.daily` (recurring, daily), `letterfly.endless`, `letterfly.stars`, `letterfly.daily_streak`.
+- 14 achievements (IDs in `Achievement`), worked out from saved progress after every round and on sign-in, so progress earned while signed out is sent later.
+- The trophy button on the home screen opens the Game Center dashboard. Setup steps and every ID are in `Release/Game-Center-Setup.md`.
+
 ### Onboarding
 - **Tutorial** (`GameScene+Tutorial.swift`): runs across Storm level 1. The ladybug coaches with a spotlight and pointer through these steps: welcome, goal, layers, star dots, spelling a star word, next layer, goal bar, scoring, red letters, hint, mix, fixing mistakes, time bonus. While the player spells the tutorial word, only the controls needed for it respond.
 - **Home tour** (`GameScene+HomeTour.swift`): the bug flies between stops on the home screen: welcome, worlds, levels, star words, stats, rules, settings, play.
@@ -127,6 +139,10 @@ Six main worlds in order: **Storm → Circus → Road → Water → Volcano → 
 | `MythTrial.swift` | The six trial rule engines, plus riddles |
 | `Stats.swift` | `StatsStore` and the `Outfit` enum |
 | `HighScoreStore.swift` | Free Play high scores |
+| `DailyPuzzle.swift` | `DailyPuzzle` (the day's world, words and deal seed) and `DailyStore` (one try a day, streaks, bests) |
+| `GameCenterGoals.swift` | Leaderboard and achievement IDs, and achievement progress from saved data |
+| `GameCenter.swift` | GameKit sign-in, score and achievement reporting, opening Game Center |
+| `GameScene+Daily.swift` | Daily card, daily round start and save, Game Center buttons |
 | `SoundPlayer.swift`, `Haptics.swift` | Audio synthesis, vibration patterns |
 | `WorldBackground.swift` | Per-world colors and animated shape backdrops |
 | `GameScene.swift` | Scene state, palette, menu theme, update loop |
@@ -150,6 +166,7 @@ Six main worlds in order: **Storm → Circus → Road → Water → Volcano → 
 - `stars.<world>`: starred level numbers
 - `found.<world>.<level>`: star words found
 - `rainbow.earned`, `myth.finaleSeen`
+- `daily.day`, `daily.score`, `daily.streak`, `daily.bestStreak`, `daily.bestScore`, `daily.played` (only the latest day is kept)
 - Plus keys for stats, high scores, settings and seen unlocks
 
 ---
@@ -193,12 +210,11 @@ Six main worlds in order: **Storm → Circus → Road → Water → Volcano → 
 - Accessibility pass: VoiceOver labels on SpriteKit nodes, Dynamic Type, reduced motion.
 - Localization and wider availability.
 - App Store preview video.
-- Daily puzzle, Game Center leaderboards and achievements.
 - More worlds or trials, and more outfits.
 
 ---
 
 ## 8. Working conventions
 - Each game-rule change lives in the pure model (`LetterFlyGame`, `MythTrial`, `Playthrough`). `GameScene` extensions handle drawing and flow only.
-- Bump `CURRENT_PROJECT_VERSION` for every upload. Builds 6–8 have been used, so the next build is 9.
+- Bump `CURRENT_PROJECT_VERSION` for every upload. Builds 6–8 have been used; the project is now set to build 9 (daily puzzle and Game Center).
 - Release notes and screenshots go under `Release/`.

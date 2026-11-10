@@ -91,7 +91,7 @@ extension GameScene {
                       at: CGPoint(x: rect.minX + 28, y: rect.midY))
         let subtitle = trial.map { $0.kind.shortTitle.uppercased() }
             ?? activeLevel.map { $0.isBoss ? "BOSS LEVEL" : "LEVEL \($0.number)" }
-            ?? (game.isEndless ? "ENDLESS" : "FREE PLAY")
+            ?? (mode == .daily ? "DAILY PUZZLE" : game.isEndless ? "ENDLESS" : "FREE PLAY")
         addLabel(world.title.uppercased(), font: "AvenirNext-Heavy", size: 16, color: world.accentLight,
                  at: CGPoint(x: rect.minX + 58, y: rect.midY + 7), alignment: .left)
         addLabel(subtitle, font: "AvenirNext-Bold", size: 9, color: Self.glassSubtext,
@@ -267,7 +267,7 @@ extension GameScene {
         panel.addChild(title)
         let roundName = trial.map { "Myth trial: \($0.kind.title)" }
             ?? activeLevel.map { $0.isBoss ? "\(world.title) boss level" : "\(world.title) level \($0.number)" }
-            ?? (game.isEndless ? "\(world.title) Endless" : "\(world.title) Free Play")
+            ?? (mode == .daily ? "\(world.title) daily puzzle" : game.isEndless ? "\(world.title) Endless" : "\(world.title) Free Play")
         let subtitle = makeLabel(roundName, font: "AvenirNext-DemiBold", size: 13, color: Palette.muted)
         subtitle.position = CGPoint(x: 0, y: top - 106)
         subtitle.zPosition = 2
@@ -279,8 +279,9 @@ extension GameScene {
                   symbol: "play.fill")
         y -= 58
         let half = (buttonWidth - 10) / 2
-        addButton(title: "RESTART", name: "action-restart", size: CGSize(width: half, height: 44),
-                  color: Palette.gold, at: CGPoint(x: -half / 2 - 5, y: y), fontSize: 13, zPosition: 2, in: panel,
+        // The daily puzzle gets one try, so its restart button is greyed out.
+        addButton(title: mode == .daily ? "ONE TRY" : "RESTART", name: "action-restart", size: CGSize(width: half, height: 44),
+                  color: mode == .daily ? Palette.muted.withAlphaComponent(0.5) : Palette.gold, at: CGPoint(x: -half / 2 - 5, y: y), fontSize: 13, zPosition: 2, in: panel,
                   symbol: "arrow.counterclockwise")
         addButton(title: sound.isEnabled ? "SOUND" : "MUTED", name: "action-pause-sound",
                   size: CGSize(width: half, height: 44), color: Palette.muted,
