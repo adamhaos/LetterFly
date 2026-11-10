@@ -140,7 +140,8 @@ extension GameScene {
     func saveDailyScore(for puzzle: DailyPuzzle) -> Bool {
         let previousBest = daily.bestScore
         guard daily.recordScore(game.score, for: puzzle) else { return false }
-        gameCenter.submit(game.score, to: .daily)
+        // A round that runs past the reset stays off the new day's leaderboard.
+        gameCenter.submitDaily(game.score, for: puzzle)
         return game.score > 0 && game.score > previousBest
     }
 

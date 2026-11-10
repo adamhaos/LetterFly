@@ -69,17 +69,22 @@ final class DailyStore {
     /// The last day a puzzle was started.
     private var lastDay: Int? { defaults.object(forKey: Key.day) as? Int }
 
-    /// A puzzle's one try is used up as soon as it starts.
-    func hasStarted(_ puzzle: DailyPuzzle) -> Bool { lastDay == puzzle.day }
+    /// A puzzle's one try is used up as soon as it starts. A later puzzle already started
+    /// (the clock was set forward, then back) locks it too, so changing the date can't buy
+    /// a second try.
+    func hasStarted(_ puzzle: DailyPuzzle) -> Bool {
+        guard let lastDay else { return false }
+        return lastDay >= puzzle.day
+    }
 
     /// The puzzle's saved score, or nil if it hasn't been finished.
     func score(for puzzle: DailyPuzzle) -> Int? {
-        hasStarted(puzzle) ? defaults.object(forKey: Key.score) as? Int : nil
+        lastDay == puzzle.day ? defaults.object(forKey: Key.score) as? Int : nil
     }
 
     /// Days in a row with a puzzle played. Missing yesterday's puzzle breaks it.
     func currentStreak(on puzzle: DailyPuzzle) -> Int {
-        guard let lastDay, lastDay >= puzzle.day - 1 else { return 0 }
+        guard let lastDay, lastDay == puzzle.day || lastDay == puzzle.day - 1 else { return 0 }
         return defaults.integer(forKey: Key.streak)
     }
 
@@ -101,7 +106,7 @@ final class DailyStore {
     /// Saves the puzzle's score the first time it ends. Returns false if it was already saved.
     @discardableResult
     func recordScore(_ score: Int, for puzzle: DailyPuzzle) -> Bool {
-        guard hasStarted(puzzle), self.score(for: puzzle) == nil else { return false }
+        guard lastDay == puzzle.day, self.score(for: puzzle) == nil else { return false }
         defaults.set(score, forKey: Key.score)
         if score > bestScore { defaults.set(score, forKey: Key.bestScore) }
         return true
