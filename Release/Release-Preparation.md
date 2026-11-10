@@ -52,3 +52,11 @@ Build 5 (attached to 1.0 in App Store Connect) predates the Myth world, star wor
 - Build 8 processed; swapped in for build 5 on version 1.0.
 - Description, promotional text and review notes updated for the Myth world and star words.
 - Submitted for review at ~8:53 PM; status Waiting for Review. Release setting: automatic on approval.
+
+### Screenshots replaced and resubmitted — November 9, 2026
+- Pulled 1.0 from review (~9:15 PM) to replace the October screenshots, which predated star words and Myth.
+- New sets in `Screenshots/build-8/`, captured from the Release build on the simulator with seeded progress:
+  - iPhone with Dynamic Island, medium display (1206 × 2622): menu with all seven worlds, Myth trials road, Sphinx riddle in play, Water level in play.
+  - iPad 13" (2064 × 2752): the same four scenes.
+- The old screenshots were removed from version 1.0 only; they remain in the ASC Asset Library.
+- Resubmitted at ~9:24 PM; status Waiting for Review.
