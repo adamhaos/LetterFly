@@ -118,12 +118,23 @@ extension GameScene {
             board = selectedBoardSize
             world = selectedWorld
             roundDuration = selectedRoundDuration
+        case .daily:
+            let puzzle = dailyPuzzle ?? .today()
+            dailyPuzzle = puzzle
+            activeLevel = nil
+            board = puzzle.boardSize
+            world = puzzle.world
+            roundDuration = puzzle.duration
+            // Starting uses up the day's one try.
+            daily.recordStart(of: puzzle)
         }
+        let puzzle = mode == .daily ? dailyPuzzle : nil
         // A round length of 0 means Endless.
-        // Levels (Myth trials too) put their unfound star words on top.
-        let levelWords = activeLevel.map { $0.wordOrder(found: progress.foundWords(in: $0)) }
+        // Levels (Myth trials too) put their unfound star words on top; the daily puzzle
+        // deals the same words and letters on every device.
+        let levelWords = activeLevel.map { $0.wordOrder(found: progress.foundWords(in: $0)) } ?? puzzle?.themeWords
         game.startNewRound(boardSize: board, world: world, endless: mode == .freePlay && roundDuration == 0,
-                           wordSeed: activeLevel?.wordSeed, words: levelWords)
+                           wordSeed: activeLevel?.wordSeed, words: levelWords, dealSeed: puzzle?.dealSeed)
         trial = activeLevel?.trial.map { MythTrial(kind: $0) }
         isShowingTrialIntro = trial != nil
         pendingOutcome = nil
@@ -148,6 +159,8 @@ extension GameScene {
             statusExpiresAt = 0
         } else if game.isEndless {
             statusMessage = "Don't let the pile topple!"
+        } else if mode == .daily {
+            statusMessage = "Daily puzzle: one try, make it count!"
         } else {
             statusMessage = activeLevel.map { "Score \($0.targetScore) to pass" } ?? "Make words with the uncovered letters"
         }
@@ -195,6 +208,8 @@ extension GameScene {
     /// Plays the finished round's setup again. Passing a level already advanced the
     /// menu selection, so point it back at the level just played.
     func replayRound() {
+        // The daily puzzle gets one try.
+        guard mode != .daily else { showMenu(); return }
         if let level = activeLevel {
             selectedWorld = level.world
             selectedLevel = level
@@ -210,6 +225,11 @@ extension GameScene {
     }
 
     func showMenu() {
+        // Leaving the daily puzzle early still counts: the score so far is saved and sent.
+        if screen == .playing, mode == .daily, let puzzle = dailyPuzzle {
+            saveDailyScore(for: puzzle)
+            gameCenter.sync()
+        }
         screen = .menu
         // Leaving mid-tutorial drops any tip; the tutorial replays unless its tour was finished.
         endCoaching()
@@ -285,12 +305,18 @@ extension GameScene {
             }
             sound.play(passedLevel ? .levelPassed : .levelFailed)
             passedLevel ? haptics.success() : haptics.warning()
+        } else if mode == .daily, let puzzle = dailyPuzzle {
+            earnedNewHighScore = saveDailyScore(for: puzzle)
+            sound.play(.levelPassed)
+            haptics.success()
         } else {
             // Endless scores are kept under a round length of 0.
             earnedNewHighScore = highScores.record(game.score, board: game.boardSize, duration: game.isEndless ? 0 : roundDuration)
             sound.play(.levelPassed)
             haptics.success()
         }
+        // Send new stars, streaks, Endless bests and achievements to Game Center.
+        gameCenter.sync()
         render()
     }
 }

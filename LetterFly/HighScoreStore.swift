@@ -30,6 +30,11 @@ final class HighScoreStore {
         scores(for: board, duration: duration).first ?? 0
     }
 
+    /// The best Endless score on any pile (Endless scores are kept under a round length of 0).
+    var bestEndlessScore: Int {
+        LetterFlyGame.BoardSize.freePlayChoices.map { bestScore(for: $0, duration: 0) }.max() ?? 0
+    }
+
     func topScores() -> [Entry] {
         if let data = defaults.data(forKey: overallKey),
            let entries = try? JSONDecoder().decode([Entry].self, from: data),

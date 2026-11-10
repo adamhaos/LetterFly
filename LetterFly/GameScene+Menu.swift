@@ -22,6 +22,7 @@ extension GameScene {
             case .settings: drawSettings()
             case .stats: drawStats()
             case .confirmReset: drawConfirmReset()
+            case .daily: drawDaily()
             case nil:
                 startHomeTourIfPending()
                 drawHomeTour()
@@ -111,6 +112,10 @@ extension GameScene {
         addIconButton(systemName: "questionmark", name: "action-rules", size: CGSize(width: 44, height: 40),
                       fillColor: theme.card, iconColor: theme.deepAccent, stroke: theme.stroke,
                       at: CGPoint(x: safe.minX + 30, y: safe.maxY - 24))
+        drawDailyButton(at: CGPoint(x: safe.minX + 82, y: safe.maxY - 24))
+        addIconButton(systemName: "trophy.fill", name: "action-gamecenter", size: CGSize(width: 44, height: 40),
+                      fillColor: theme.card, iconColor: theme.deepAccent, stroke: theme.stroke,
+                      at: CGPoint(x: safe.maxX - 134, y: safe.maxY - 24))
 
         if selectedWorld == .myth {
             drawMythMenu(in: safe)

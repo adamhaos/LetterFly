@@ -5,7 +5,7 @@ final class GameScene: SKScene {
     /// Rainbow-skin shaders, shared by every bug (keyed by brightness).
     nonisolated(unsafe) static var rainbowShaders: [Int: SKShader] = [:]
     enum Screen { case menu, playing, finished }
-    enum Mode { case playthrough, freePlay }
+    enum Mode { case playthrough, freePlay, daily }
 
     enum Palette {
         static let ink = SKColor(red: 0.10, green: 0.13, blue: 0.18, alpha: 1)
@@ -91,6 +91,8 @@ final class GameScene: SKScene {
     let sound = SoundPlayer.shared
     let haptics = Haptics.shared
     let stats = StatsStore.shared
+    let daily = DailyStore.shared
+    let gameCenter = GameCenter.shared
 
     var screen: Screen = .menu
     var mode: Mode = .playthrough
@@ -101,8 +103,10 @@ final class GameScene: SKScene {
     /// True when the FREE item in the level row is picked, expanding the card into Free Play options.
     var isFreePlaySelected = false
 
-    /// The level being played, or nil during Free Play.
+    /// The level being played, or nil during Free Play and the daily puzzle.
     var activeLevel: Level?
+    /// The daily puzzle last started. Only meaningful while `mode` is `.daily`.
+    var dailyPuzzle: DailyPuzzle?
     var roundDuration: TimeInterval = 90
     var timeRemaining: TimeInterval = 90
     var lastUpdateTime: TimeInterval = 0
@@ -123,7 +127,7 @@ final class GameScene: SKScene {
     var isAnimatingFeedback = false
     var isConfirmingExit = false
     /// A popup card shown over the home screen.
-    enum MenuOverlay { case rules, settings, stats, confirmReset }
+    enum MenuOverlay { case rules, settings, stats, confirmReset, daily }
     var menuOverlay: MenuOverlay?
     static let tutorialKey = "tutorial.done"
     /// The tip on screen, or nil when the bug isn't talking. The clock waits while one shows.
@@ -336,7 +340,10 @@ final class GameScene: SKScene {
         }
         if isConfirmingExit {
             if names.contains("action-exit-confirm") { showMenu() }
-            else if names.contains("action-restart") { replayRound() }
+            else if names.contains("action-restart") {
+                // The daily puzzle gets one try, so it can't be restarted.
+                if mode == .daily { flashMenuNote("The daily puzzle has one try. Come back tomorrow!") } else { replayRound() }
+            }
             else if names.contains("action-pause-sound") {
                 sound.isEnabled.toggle()
                 haptics.select()
@@ -402,6 +409,9 @@ final class GameScene: SKScene {
         case "action-rules": setOverlay(.rules)
         case "action-settings": setOverlay(.settings)
         case "action-stats": setOverlay(.stats)
+        case "action-daily": setOverlay(.daily)
+        case "action-gamecenter": openGameCenter(nil)
+        case "action-leaderboard-daily": openGameCenter(.daily)
         default:
             if let rows = Self.number(in: action, after: "action-board-"),
                let board = LetterFlyGame.BoardSize(rawValue: rows) {

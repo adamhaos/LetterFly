@@ -114,9 +114,11 @@ final class LetterFlyGame {
     init() { startNewRound(boardSize: .classic, world: .storm) }
 
     /// `words` stacks exactly those theme words, top layer first; otherwise `wordSeed` fixes
-    /// which theme words a round uses. Either way the letters are dealt out fresh each time.
+    /// which theme words a round uses. The letters are dealt out fresh each time unless
+    /// `dealSeed` is given, which fixes the deal, red letters and wild (the daily puzzle).
     func startNewRound(boardSize: BoardSize, world: World, endless: Bool = false, wordSeed: UInt64? = nil,
-                       words: [String]? = nil) {
+                       words: [String]? = nil, dealSeed: UInt64? = nil) {
+        var dealer = SeededGenerator(seed: dealSeed ?? UInt64.random(in: .min ... .max))
         self.boardSize = boardSize
         self.world = world
         isEndless = endless
@@ -134,10 +136,10 @@ final class LetterFlyGame {
             Array(roundWords[$0..<min($0 + wordsPerLayer, roundWords.count)])
         }
         for layer in layers.reversed() {
-            let letters = layer.flatMap(Array.init).shuffled()
+            let letters = layer.flatMap(Array.init).shuffled(using: &dealer)
             for (lane, letter) in letters.enumerated() {
                 // Myth letters carry their own colors (gold, threads), so no red bonus letters there.
-                stacks[lane].append(Tile(id: nextID, letter: letter, isBonus: world != .myth && Int.random(in: 0..<7) == 0))
+                stacks[lane].append(Tile(id: nextID, letter: letter, isBonus: world != .myth && Int.random(in: 0..<7, using: &dealer) == 0))
                 nextID += 1
             }
         }
@@ -149,7 +151,8 @@ final class LetterFlyGame {
             roundWords = Array(roundWords.prefix(keep * wordsPerLayer))
         }
         // Bigger boards hide one wild "?" letter somewhere in the pile.
-        if boardSize != .classic, world != .myth, let lane = stacks.indices.randomElement(), let index = stacks[lane].indices.randomElement() {
+        if boardSize != .classic, world != .myth, let lane = stacks.indices.randomElement(using: &dealer),
+           let index = stacks[lane].indices.randomElement(using: &dealer) {
             let tile = stacks[lane][index]
             stacks[lane][index] = Tile(id: tile.id, letter: tile.letter, isBonus: false, isWild: true)
         }

@@ -22,6 +22,12 @@ class GameViewController: UIViewController {
         becomeFirstResponder()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Game Center is optional; its sign-in sheet (if needed) shows over the game once.
+        GameCenter.shared.authenticate(from: self)
+    }
+
     override var canBecomeFirstResponder: Bool { true }
 
     override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
