@@ -32,6 +32,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
+        // Pause any round in progress, so the player comes back to the pause menu.
+        NotificationCenter.default.post(name: .letterFlyWillResignActive, object: nil)
         // Called when the scene will move from an active state to an inactive state.
         // This may occur due to temporary interruptions (ex. an incoming phone call).
     }
@@ -50,3 +52,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 }
 
+extension Notification.Name {
+    static let letterFlyWillResignActive = Notification.Name("letterFlyWillResignActive")
+}
